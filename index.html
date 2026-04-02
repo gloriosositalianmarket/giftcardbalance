@@ -1,1151 +1,1211 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { DollarSign, CreditCard, CalendarDays, Wallet, TrendingUp, PlusCircle, Receipt, PiggyBank, AlertTriangle } from "lucide-react";
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell } from "recharts";
-
-const ACCOUNTS_KEY = "friendly_finance_accounts_v1";
-const INCOME_KEY = "friendly_finance_income_v1";
-const EXTRA_INCOME_KEY = "friendly_finance_extra_income_v1";
-
-const accountTypes = ["Credit Card", "Car Payment", "Affirm", "Loan", "Bill"];
-const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-const currency = (value) =>
-  new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(Number(value || 0));
-
-const formatDate = (dateString) => {
-  if (!dateString) return "-";
-  const date = new Date(`${dateString}T00:00:00`);
-  return date.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-};
-
-const todayString = () => new Date().toISOString().split("T")[0];
-
-const statusClass = (days) => {
-  if (days < 0) return "text-red-600";
-  if (days <= 7) return "text-amber-600";
-  return "text-teal-700";
-};
-
-const safeRead = (key, fallback) => {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch {
-    return fallback;
-  }
-};
-
-function countIncomeOccurrences(startDateString, weekdayString, endDate = new Date()) {
-  if (!startDateString) return 0;
-  const targetWeekday = Number(weekdayString ?? 5);
-  const start = new Date(`${startDateString}T00:00:00`);
-  const endCopy = new Date(endDate);
-  endCopy.setHours(0, 0, 0, 0);
-  if (start > endCopy) return 0;
-
-  const first = new Date(start);
-  const dayDiff = (targetWeekday - first.getDay() + 7) % 7;
-  first.setDate(first.getDate() + dayDiff);
-  if (first > endCopy) return 0;
-
-  const diffMs = endCopy - first;
-  return Math.floor(diffMs / (1000 * 60 * 60 * 24 * 7)) + 1;
-}
-
-function getDaysInMonth(year, monthIndex) {
-  return new Date(year, monthIndex + 1, 0).getDate();
-}
-
-function getMonthStartString(year, monthIndex) {
-  return `${year}-${String(monthIndex + 1).padStart(2, "0")}-01`;
-}
-
-export default function FinanceTrackerFriendlyApp() {
-  const [accounts, setAccounts] = useState([]);
-  const [income, setIncome] = useState({ weeklyIncome: 1568, startDate: todayString(), weekday: "5" });
-  const [extraIncome, setExtraIncome] = useState([]);
-  const [activeTab, setActiveTab] = useState("dashboard");
-  const [calendarMonth, setCalendarMonth] = useState(() => {
-    const now = new Date();
-    return { year: now.getFullYear(), month: now.getMonth() };
-  });
-
-  const [accountForm, setAccountForm] = useState({
-    id: "",
-    name: "",
-    type: "Credit Card",
-    balance: "",
-    creditLimit: "",
-    payment: "",
-    dueDate: todayString(),
-    interestRate: "",
-    notes: "",
-  });
-
-  const [paymentForm, setPaymentForm] = useState({ accountId: "", amount: "", date: todayString(), note: "" });
-  const [expenseForm, setExpenseForm] = useState({ accountId: "", amount: "", date: todayString(), note: "" });
-  const [extraIncomeForm, setExtraIncomeForm] = useState({ source: "", amount: "", date: todayString(), note: "" });
-
-  useEffect(() => {
-    const savedAccounts = safeRead(ACCOUNTS_KEY, []);
-    const savedIncome = safeRead(INCOME_KEY, { weeklyIncome: 1568, startDate: todayString(), weekday: "5" });
-    const savedExtraIncome = safeRead(EXTRA_INCOME_KEY, []);
-
-    setAccounts(
-      savedAccounts.map((account) => ({
-        ...account,
-        creditLimit: Number(account.creditLimit || 0),
-        paymentHistory: Array.isArray(account.paymentHistory) ? account.paymentHistory : [],
-        expenseHistory: Array.isArray(account.expenseHistory) ? account.expenseHistory : [],
-      }))
-    );
-    setIncome(savedIncome);
-    setExtraIncome(Array.isArray(savedExtraIncome) ? savedExtraIncome : []);
-  }, []);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
-    }
-  }, [accounts]);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(INCOME_KEY, JSON.stringify(income));
-    }
-  }, [income]);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(EXTRA_INCOME_KEY, JSON.stringify(extraIncome));
-    }
-  }, [extraIncome]);
-
-  useEffect(() => {
-    if (accounts.length && !paymentForm.accountId) {
-      setPaymentForm((prev) => ({ ...prev, accountId: accounts[0].id }));
-    }
-    if (accounts.length && !expenseForm.accountId) {
-      setExpenseForm((prev) => ({ ...prev, accountId: accounts[0].id }));
-    }
-  }, [accounts, paymentForm.accountId, expenseForm.accountId]);
-
-  const summary = useMemo(() => {
-    const totalBalance = accounts.reduce((sum, item) => sum + Number(item.balance || 0), 0);
-    const totalMonthly = accounts.reduce((sum, item) => sum + Number(item.payment || 0), 0);
-    const totalPaymentsMade = accounts.reduce(
-      (sum, account) => sum + (account.paymentHistory || []).reduce((a, p) => a + Number(p.amount || 0), 0),
-      0
-    );
-    const totalExpensesMade = accounts.reduce(
-      (sum, account) => sum + (account.expenseHistory || []).reduce((a, e) => a + Number(e.amount || 0), 0),
-      0
-    );
-    const extraIncomeTotal = extraIncome.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-    const weeksPaid = countIncomeOccurrences(income.startDate, income.weekday);
-    const baseIncome = weeksPaid * Number(income.weeklyIncome || 0);
-    const totalIncome = baseIncome + extraIncomeTotal;
-    const availableCash = totalIncome - totalPaymentsMade - totalExpensesMade;
-    const nextDue = [...accounts].filter((a) => a.dueDate).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))[0];
-
-    return {
-      totalBalance,
-      totalMonthly,
-      totalPaymentsMade,
-      totalExpensesMade,
-      extraIncomeTotal,
-      weeksPaid,
-      baseIncome,
-      totalIncome,
-      availableCash,
-      nextDue,
-    };
-  }, [accounts, extraIncome, income]);
-
-  const allPayments = useMemo(
-    () =>
-      accounts
-        .flatMap((account) =>
-          (account.paymentHistory || []).map((item) => ({
-            ...item,
-            accountName: account.name,
-            accountType: account.type,
-          }))
-        )
-        .sort((a, b) => new Date(b.date) - new Date(a.date)),
-    [accounts]
-  );
-
-  const allExpenses = useMemo(
-    () =>
-      accounts
-        .flatMap((account) =>
-          (account.expenseHistory || []).map((item) => ({
-            ...item,
-            accountName: account.name,
-            accountType: account.type,
-          }))
-        )
-        .sort((a, b) => new Date(b.date) - new Date(a.date)),
-    [accounts]
-  );
-
-  const monthlyChartData = useMemo(() => {
-    const bucket = new Map();
-    const addToBucket = (date, key, amount) => {
-      if (!date) return;
-      const d = new Date(`${date}T00:00:00`);
-      const label = `${monthNames[d.getMonth()]} ${String(d.getFullYear()).slice(-2)}`;
-      if (!bucket.has(label)) bucket.set(label, { month: label, payments: 0, expenses: 0, income: 0 });
-      bucket.get(label)[key] += Number(amount || 0);
-    };
-
-    allPayments.forEach((item) => addToBucket(item.date, "payments", item.amount));
-    allExpenses.forEach((item) => addToBucket(item.date, "expenses", item.amount));
-    extraIncome.forEach((item) => addToBucket(item.date, "income", item.amount));
-
-    return Array.from(bucket.values()).slice(-6);
-  }, [allPayments, allExpenses, extraIncome]);
-
-  const spendingByAccount = useMemo(() => {
-    return accounts
-      .map((account) => ({
-        name: account.name,
-        value: (account.expenseHistory || []).reduce((sum, item) => sum + Number(item.amount || 0), 0),
-      }))
-      .filter((item) => item.value > 0)
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 6);
-  }, [accounts]);
-
-  const calendarItems = useMemo(() => {
-    const monthStart = new Date(calendarMonth.year, calendarMonth.month, 1);
-    const monthEnd = new Date(calendarMonth.year, calendarMonth.month + 1, 0);
-    const monthStartStr = getMonthStartString(calendarMonth.year, calendarMonth.month);
-    const items = [];
-
-    accounts.forEach((account) => {
-      if (!account.dueDate) return;
-      const due = new Date(`${account.dueDate}T00:00:00`);
-      if (due.getMonth() === calendarMonth.month && due.getFullYear() === calendarMonth.year) {
-        items.push({
-          id: `due-${account.id}`,
-          date: account.dueDate,
-          title: `${account.name} due`,
-          amount: account.payment,
-          kind: "due",
-        });
-      }
-    });
-
-    allPayments.forEach((item) => {
-      const d = new Date(`${item.date}T00:00:00`);
-      if (d.getMonth() === calendarMonth.month && d.getFullYear() === calendarMonth.year) {
-        items.push({
-          id: `pay-${item.id}`,
-          date: item.date,
-          title: `${item.accountName} payment`,
-          amount: item.amount,
-          kind: "payment",
-        });
-      }
-    });
-
-    allExpenses.forEach((item) => {
-      const d = new Date(`${item.date}T00:00:00`);
-      if (d.getMonth() === calendarMonth.month && d.getFullYear() === calendarMonth.year) {
-        items.push({
-          id: `exp-${item.id}`,
-          date: item.date,
-          title: `${item.accountName} expense`,
-          amount: item.amount,
-          kind: "expense",
-        });
-      }
-    });
-
-    extraIncome.forEach((item) => {
-      const d = new Date(`${item.date}T00:00:00`);
-      if (d.getMonth() === calendarMonth.month && d.getFullYear() === calendarMonth.year) {
-        items.push({
-          id: `inc-${item.id}`,
-          date: item.date,
-          title: item.source,
-          amount: item.amount,
-          kind: "income",
-        });
-      }
-    });
-
-    if (income.startDate) {
-      const current = new Date(`${monthStartStr}T00:00:00`);
-      while (current <= monthEnd) {
-        if (current.getDay() === Number(income.weekday)) {
-          const currentStr = current.toISOString().split("T")[0];
-          if (currentStr >= income.startDate) {
-            items.push({
-              id: `weekly-${currentStr}`,
-              date: currentStr,
-              title: "Weekly income",
-              amount: income.weeklyIncome,
-              kind: "income",
-            });
-          }
-        }
-        current.setDate(current.getDate() + 1);
-      }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Friendly Finance Tracker</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --card: #ffffff;
+      --line: #e5e7eb;
+      --text: #0f172a;
+      --muted: #64748b;
+      --primary: #0f172a;
+      --soft: #eef2ff;
+      --good: #0f766e;
+      --warn: #b45309;
+      --danger: #b91c1c;
+      --radius: 18px;
+      --shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
     }
 
-    return items;
-  }, [calendarMonth, accounts, allPayments, allExpenses, extraIncome, income]);
-
-  const calendarGrid = useMemo(() => {
-    const firstDay = new Date(calendarMonth.year, calendarMonth.month, 1).getDay();
-    const daysInMonth = getDaysInMonth(calendarMonth.year, calendarMonth.month);
-    const cells = [];
-
-    for (let i = 0; i < firstDay; i += 1) cells.push(null);
-    for (let day = 1; day <= daysInMonth; day += 1) {
-      const dateStr = `${calendarMonth.year}-${String(calendarMonth.month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      cells.push({
-        day,
-        dateStr,
-        items: calendarItems.filter((item) => item.date === dateStr),
-      });
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
     }
-    return cells;
-  }, [calendarMonth, calendarItems]);
 
-  const resetAccountForm = () =>
-    setAccountForm({
-      id: "",
-      name: "",
-      type: "Credit Card",
-      balance: "",
-      creditLimit: "",
-      payment: "",
-      dueDate: todayString(),
-      interestRate: "",
-      notes: "",
-    });
+    .container {
+      max-width: 1350px;
+      margin: 0 auto;
+      padding: 24px;
+    }
 
-  const submitAccount = (e) => {
-    e.preventDefault();
-    const newAccount = {
-      id: accountForm.id || crypto.randomUUID(),
-      name: accountForm.name.trim(),
-      type: accountForm.type,
-      balance: Number(accountForm.balance || 0),
-      creditLimit: Number(accountForm.creditLimit || 0),
-      payment: Number(accountForm.payment || 0),
-      dueDate: accountForm.dueDate,
-      interestRate: accountForm.interestRate === "" ? "" : Number(accountForm.interestRate),
-      notes: accountForm.notes.trim(),
-      paymentHistory: accounts.find((a) => a.id === accountForm.id)?.paymentHistory || [],
-      expenseHistory: accounts.find((a) => a.id === accountForm.id)?.expenseHistory || [],
-    };
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
 
-    setAccounts((prev) => {
-      const exists = prev.some((item) => item.id === newAccount.id);
-      return exists ? prev.map((item) => (item.id === newAccount.id ? newAccount : item)) : [...prev, newAccount];
-    });
-    resetAccountForm();
-  };
+    .title h1 {
+      margin: 0;
+      font-size: 30px;
+    }
 
-  const editAccount = (account) => {
-    setActiveTab("accounts");
-    setAccountForm({
-      id: account.id,
-      name: account.name,
-      type: account.type,
-      balance: String(account.balance ?? ""),
-      creditLimit: String(account.creditLimit ?? ""),
-      payment: String(account.payment ?? ""),
-      dueDate: account.dueDate || todayString(),
-      interestRate: account.interestRate === "" ? "" : String(account.interestRate),
-      notes: account.notes || "",
-    });
-  };
+    .title p {
+      margin: 6px 0 0;
+      color: var(--muted);
+    }
 
-  const deleteAccount = (id) => {
-    setAccounts((prev) => prev.filter((item) => item.id !== id));
-  };
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
 
-  const applyPayment = (e) => {
-    e.preventDefault();
-    const amount = Number(paymentForm.amount || 0);
-    if (!paymentForm.accountId || amount <= 0) return;
+    button {
+      border: none;
+      background: var(--primary);
+      color: #fff;
+      padding: 11px 14px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: 700;
+    }
 
-    setAccounts((prev) =>
-      prev.map((account) =>
-        account.id === paymentForm.accountId
-          ? {
-              ...account,
-              balance: Math.max(0, Number(account.balance || 0) - amount),
-              paymentHistory: [
-                {
-                  id: crypto.randomUUID(),
-                  amount,
-                  date: paymentForm.date,
-                  note: paymentForm.note.trim(),
-                },
-                ...(account.paymentHistory || []),
-              ],
-            }
-          : account
-      )
-    );
+    button.secondary {
+      background: #fff;
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
 
-    setPaymentForm((prev) => ({ ...prev, amount: "", date: todayString(), note: "" }));
-  };
+    button.danger {
+      background: var(--danger);
+    }
 
-  const addExpense = (e) => {
-    e.preventDefault();
-    const amount = Number(expenseForm.amount || 0);
-    if (!expenseForm.accountId || amount <= 0) return;
+    .tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
 
-    setAccounts((prev) =>
-      prev.map((account) =>
-        account.id === expenseForm.accountId
-          ? {
-              ...account,
-              balance: Number(account.balance || 0) + amount,
-              expenseHistory: [
-                {
-                  id: crypto.randomUUID(),
-                  amount,
-                  date: expenseForm.date,
-                  note: expenseForm.note.trim(),
-                },
-                ...(account.expenseHistory || []),
-              ],
-            }
-          : account
-      )
-    );
+    .tab-btn {
+      background: #fff;
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
 
-    setExpenseForm((prev) => ({ ...prev, amount: "", date: todayString(), note: "" }));
-  };
+    .tab-btn.active {
+      background: var(--primary);
+      color: white;
+    }
 
-  const addExtraIncome = (e) => {
-    e.preventDefault();
-    const amount = Number(extraIncomeForm.amount || 0);
-    if (!extraIncomeForm.source.trim() || amount <= 0) return;
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
 
-    setExtraIncome((prev) => [
-      {
-        id: crypto.randomUUID(),
-        source: extraIncomeForm.source.trim(),
-        amount,
-        date: extraIncomeForm.date,
-        note: extraIncomeForm.note.trim(),
-      },
-      ...prev,
-    ]);
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 20px;
+    }
 
-    setExtraIncomeForm({ source: "", amount: "", date: todayString(), note: "" });
-  };
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
 
-  const exportData = () => {
-    const data = { income, extraIncome, accounts };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "friendly-finance-tracker.json";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+    .card h2, .card h3 {
+      margin: 0 0 14px;
+    }
 
-  const loadSample = () => {
-    const sample = [
-      {
-        id: crypto.randomUUID(),
-        name: "Chase Credit Card",
-        type: "Credit Card",
-        balance: 6800,
-        creditLimit: 9000,
-        payment: 220,
-        dueDate: "2026-04-12",
-        interestRate: 24.99,
-        notes: "Main credit card. Autopay minimum enabled.",
-        paymentHistory: [],
-        expenseHistory: [],
-      },
-      {
-        id: crypto.randomUUID(),
-        name: "Toyota Car Payment",
-        type: "Car Payment",
-        balance: 1430,
-        creditLimit: 0,
-        payment: 410,
-        dueDate: "2026-04-18",
-        interestRate: 6.25,
-        notes: "Monthly vehicle loan payment.",
-        paymentHistory: [],
-        expenseHistory: [],
-      },
-      {
-        id: crypto.randomUUID(),
-        name: "Affirm Purchase Plan",
-        type: "Affirm",
-        balance: 540,
-        creditLimit: 1200,
-        payment: 90,
-        dueDate: "2026-04-09",
-        interestRate: 0,
-        notes: "Phone and accessories financing.",
-        paymentHistory: [],
-        expenseHistory: [],
-      },
-    ];
-    setAccounts(sample);
-    setIncome({ weeklyIncome: 1568, startDate: "2026-04-03", weekday: "5" });
-    setExtraIncome([]);
-    setPaymentForm({ accountId: sample[0].id, amount: "", date: todayString(), note: "" });
-    setExpenseForm({ accountId: sample[0].id, amount: "", date: todayString(), note: "" });
-  };
+    .stat-label {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
 
-  const statCards = [
-    {
-      title: "Available Cash",
-      value: currency(summary.availableCash),
-      note: `${currency(summary.totalPaymentsMade)} payments • ${currency(summary.totalExpensesMade)} expenses`,
-      icon: Wallet,
-    },
-    {
-      title: "Total Income",
-      value: currency(summary.totalIncome),
-      note: `${summary.weeksPaid} Fridays counted + ${currency(summary.extraIncomeTotal)} extra income`,
-      icon: TrendingUp,
-    },
-    {
-      title: "Total Balance Owed",
-      value: currency(summary.totalBalance),
-      note: `${accounts.length} account(s) tracked`,
-      icon: CreditCard,
-    },
-    {
-      title: "Next Due",
-      value: summary.nextDue ? summary.nextDue.name : "No due dates",
-      note: summary.nextDue ? `${formatDate(summary.nextDue.dueDate)} • ${currency(summary.nextDue.payment)}` : "Add an account to start",
-      icon: CalendarDays,
-    },
-  ];
+    .stat-value {
+      font-size: 28px;
+      font-weight: 800;
+    }
 
-  const pieColors = ["#0f172a", "#334155", "#64748b", "#94a3b8", "#cbd5e1", "#e2e8f0"];
+    .stat-note {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
 
-  return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Friendly Finance Tracker</h1>
-            <p className="text-sm text-slate-600">A cleaner app to track balances, payments, purchases, limits, income, and monthly activity.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={loadSample}>Load Sample</Button>
-            <Button variant="outline" onClick={exportData}>Export</Button>
-          </div>
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .grid-3 { display: grid; grid-template-columns: 2fr 1fr; gap: 18px; }
+    .grid-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .full { grid-column: 1 / -1; }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      font-size: 14px;
+      background: #fff;
+    }
+
+    textarea { min-height: 90px; resize: vertical; }
+
+    .form-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+
+    .account-list, .activity-list, .history-list, .disclosure-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .account-item, .history-item, .disclosure-item {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+      background: #fff;
+    }
+
+    .account-item.warn { background: #fffbeb; border-color: #f59e0b; }
+    .account-item.danger { background: #fef2f2; border-color: #ef4444; }
+
+    .item-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .badges {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 5px 9px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      background: #f1f5f9;
+    }
+
+    .badge.warn { background: #fef3c7; color: #92400e; }
+    .badge.danger { background: #fee2e2; color: #991b1b; }
+    .badge.good { background: #ccfbf1; color: #115e59; }
+
+    .muted { color: var(--muted); font-size: 13px; }
+    .right { text-align: right; }
+
+    .progress-wrap {
+      margin-top: 12px;
+    }
+
+    .progress-track {
+      background: #e2e8f0;
+      height: 10px;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: var(--primary);
+      width: 0;
+      border-radius: 999px;
+    }
+
+    .progress-bar.warn { background: #f59e0b; }
+    .progress-bar.danger { background: #ef4444; }
+
+    .chart-wrap {
+      position: relative;
+      height: 320px;
+    }
+
+    .calendar-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .calendar-legend {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .legend-pill {
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .legend-due { background: #e2e8f0; }
+    .legend-income { background: #ccfbf1; }
+    .legend-payment { background: #fee2e2; }
+    .legend-expense { background: #fef3c7; }
+
+    .calendar-weekdays, .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 8px;
+    }
+
+    .calendar-weekdays div {
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 6px 0;
+    }
+
+    .day-cell {
+      min-height: 130px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #fff;
+      padding: 8px;
+    }
+
+    .day-number {
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    .day-item {
+      font-size: 10px;
+      border-radius: 10px;
+      padding: 5px 6px;
+      margin-bottom: 5px;
+      font-weight: 700;
+    }
+
+    .kind-due { background: #e2e8f0; }
+    .kind-income { background: #ccfbf1; color: #115e59; }
+    .kind-payment { background: #fee2e2; color: #991b1b; }
+    .kind-expense { background: #fef3c7; color: #92400e; }
+
+    .empty {
+      border: 1px dashed var(--line);
+      border-radius: 14px;
+      padding: 22px;
+      text-align: center;
+      color: var(--muted);
+      background: #fafafa;
+    }
+
+    @media (max-width: 1100px) {
+      .stats, .grid-2, .grid-3 { grid-template-columns: 1fr 1fr; }
+      .grid-3 > *:last-child { grid-column: 1 / -1; }
+    }
+
+    @media (max-width: 760px) {
+      .stats, .grid-2, .grid-3, .grid-form { grid-template-columns: 1fr; }
+      .calendar-weekdays, .calendar-grid { gap: 6px; }
+      .day-cell { min-height: 100px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div class="title">
+        <h1>Friendly Finance Tracker</h1>
+        <p>Track balances, payments, purchases, credit limits, income, charts, and calendar in one place.</p>
+      </div>
+      <div class="actions">
+        <button class="secondary" id="loadSampleBtn">Load Sample</button>
+        <button class="secondary" id="exportBtn">Export JSON</button>
+        <button class="danger" id="clearBtn">Clear All</button>
+      </div>
+    </div>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+      <button class="tab-btn" data-tab="accounts">Accounts</button>
+      <button class="tab-btn" data-tab="payments">Payments</button>
+      <button class="tab-btn" data-tab="expenses">Expenses</button>
+      <button class="tab-btn" data-tab="income">Income</button>
+      <button class="tab-btn" data-tab="calendar">Calendar</button>
+    </div>
+
+    <div class="tab-panel active" id="tab-dashboard">
+      <div class="grid-2">
+        <div class="card">
+          <h2>Account Overview</h2>
+          <div id="dashboardAccounts" class="account-list"></div>
         </div>
-
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {statCards.map((card) => {
-            const Icon = card.icon;
-            return (
-              <Card key={card.title} className="rounded-2xl shadow-sm">
-                <CardContent className="p-5">
-                  <div className="mb-3 flex items-center justify-between">
-                    <p className="text-sm text-slate-500">{card.title}</p>
-                    <Icon className="h-5 w-5 text-slate-500" />
-                  </div>
-                  <div className="text-2xl font-bold">{card.value}</div>
-                  <p className="mt-2 text-xs text-slate-500">{card.note}</p>
-                </CardContent>
-              </Card>
-            );
-          })}
+        <div class="card">
+          <h2>Monthly Spending & Payments</h2>
+          <div class="chart-wrap"><canvas id="barChart"></canvas></div>
         </div>
-
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-3 md:grid-cols-6 rounded-2xl">
-            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-            <TabsTrigger value="accounts">Accounts</TabsTrigger>
-            <TabsTrigger value="payments">Payments</TabsTrigger>
-            <TabsTrigger value="expenses">Expenses</TabsTrigger>
-            <TabsTrigger value="income">Income</TabsTrigger>
-            <TabsTrigger value="calendar">Calendar</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="dashboard" className="space-y-4">
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Card className="rounded-2xl shadow-sm">
-                <CardHeader>
-                  <CardTitle>Account Overview</CardTitle>
-                  <CardDescription>Balances, limits, available credit, and warnings.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {accounts.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed p-8 text-center text-sm text-slate-500">No accounts yet.</div>
-                  ) : (
-                    accounts
-                      .slice()
-                      .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
-                      .map((account) => {
-                        const availableCredit = account.creditLimit > 0 ? Math.max(0, account.creditLimit - account.balance) : 0;
-                        const usagePercent = account.creditLimit > 0 ? Math.min(100, (account.balance / account.creditLimit) * 100) : 0;
-                        const days = account.dueDate
-                          ? Math.round((new Date(`${account.dueDate}T00:00:00`) - new Date(new Date().setHours(0, 0, 0, 0))) / (1000 * 60 * 60 * 24))
-                          : 0;
-                        const warningTone = usagePercent >= 90 ? "border-red-300 bg-red-50" : usagePercent >= 75 ? "border-amber-300 bg-amber-50" : "border-slate-200";
-                        const progressTone = usagePercent >= 90 ? "bg-red-600" : usagePercent >= 75 ? "bg-amber-500" : "bg-slate-900";
-
-                        return (
-                          <div key={account.id} className={`rounded-2xl border p-4 ${warningTone}`}>
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div>
-                                <div className="font-semibold">{account.name}</div>
-                                <div className="mt-1 flex items-center gap-2 flex-wrap">
-                                  <Badge variant="secondary">{account.type}</Badge>
-                                  <span className={`text-xs font-semibold ${statusClass(days)}`}>
-                                    {days < 0 ? `Past due by ${Math.abs(days)} day(s)` : `Due in ${days} day(s)`}
-                                  </span>
-                                  {account.creditLimit > 0 && usagePercent >= 75 && (
-                                    <Badge variant="outline" className={usagePercent >= 90 ? "border-red-500 text-red-700" : "border-amber-500 text-amber-700"}>
-                                      <AlertTriangle className="mr-1 h-3 w-3" />
-                                      {usagePercent >= 90 ? "Near limit" : "High usage"}
-                                    </Badge>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <div className="font-semibold">{currency(account.balance)}</div>
-                                <div className="text-xs text-slate-500">Monthly payment {currency(account.payment)}</div>
-                              </div>
-                            </div>
-
-                            {account.creditLimit > 0 && (
-                              <div className="mt-4 space-y-2">
-                                <div className="flex justify-between text-xs text-slate-600">
-                                  <span>Available credit {currency(availableCredit)}</span>
-                                  <span>{Math.round(usagePercent)}% used</span>
-                                </div>
-                                <div className="h-2 w-full overflow-hidden rounded-full bg-white">
-                                  <div className={`h-full rounded-full ${progressTone}`} style={{ width: `${usagePercent}%` }} />
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card className="rounded-2xl shadow-sm">
-                <CardHeader>
-                  <CardTitle>Monthly Spending & Payments</CardTitle>
-                  <CardDescription>Last months of income, payments, and expenses.</CardDescription>
-                </CardHeader>
-                <CardContent className="h-[340px]">
-                  {monthlyChartData.length === 0 ? (
-                    <div className="flex h-full items-center justify-center rounded-2xl border border-dashed text-sm text-slate-500">No chart data yet.</div>
-                  ) : (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={monthlyChartData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="month" />
-                        <YAxis />
-                        <Tooltip formatter={(value) => currency(value)} />
-                        <Bar dataKey="income" radius={[6, 6, 0, 0]} />
-                        <Bar dataKey="payments" radius={[6, 6, 0, 0]} />
-                        <Bar dataKey="expenses" radius={[6, 6, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Card className="rounded-2xl shadow-sm">
-                <CardHeader>
-                  <CardTitle>Spending by Account</CardTitle>
-                  <CardDescription>Which accounts are carrying the most purchases.</CardDescription>
-                </CardHeader>
-                <CardContent className="h-[320px]">
-                  {spendingByAccount.length === 0 ? (
-                    <div className="flex h-full items-center justify-center rounded-2xl border border-dashed text-sm text-slate-500">No expense data yet.</div>
-                  ) : (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie data={spendingByAccount} dataKey="value" nameKey="name" outerRadius={110} label>
-                          {spendingByAccount.map((entry, index) => (
-                            <Cell key={entry.name} fill={pieColors[index % pieColors.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip formatter={(value) => currency(value)} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card className="rounded-2xl shadow-sm">
-                <CardHeader>
-                  <CardTitle>Recent Activity</CardTitle>
-                  <CardDescription>Latest payments and purchases.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {[...allPayments.slice(0, 4).map((x) => ({ ...x, kind: "Payment" })), ...allExpenses.slice(0, 4).map((x) => ({ ...x, kind: "Expense" }))]
-                    .sort((a, b) => new Date(b.date) - new Date(a.date))
-                    .slice(0, 8)
-                    .map((item) => (
-                      <div key={item.id} className="flex items-center justify-between rounded-2xl border p-3">
-                        <div>
-                          <div className="font-medium">{item.accountName}</div>
-                          <div className="text-xs text-slate-500">{item.kind} • {item.note || item.accountType}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className={`font-semibold ${item.kind === "Payment" ? "text-teal-700" : "text-slate-900"}`}>
-                            {item.kind === "Payment" ? "-" : "+"}{currency(item.amount)}
-                          </div>
-                          <div className="text-xs text-slate-500">{formatDate(item.date)}</div>
-                        </div>
-                      </div>
-                    ))}
-                  {allPayments.length === 0 && allExpenses.length === 0 && (
-                    <div className="rounded-2xl border border-dashed p-8 text-center text-sm text-slate-500">No activity yet.</div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="accounts" className="space-y-4">
-            <div className="grid gap-4 lg:grid-cols-[420px_1fr]">
-              <Card className="rounded-2xl shadow-sm">
-                <CardHeader>
-                  <CardTitle>{accountForm.id ? "Edit Account" : "Add Account"}</CardTitle>
-                  <CardDescription>Add credit cards, car loan, affirm, loans, or bills.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <form onSubmit={submitAccount} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label>Account Name</Label>
-                      <Input value={accountForm.name} onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })} placeholder="Chase Credit Card" required />
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Type</Label>
-                        <Select value={accountForm.type} onValueChange={(value) => setAccountForm({ ...accountForm, type: value })}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {accountTypes.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Due Date</Label>
-                        <Input type="date" value={accountForm.dueDate} onChange={(e) => setAccountForm({ ...accountForm, dueDate: e.target.value })} required />
-                      </div>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Current Balance</Label>
-                        <Input type="number" step="0.01" value={accountForm.balance} onChange={(e) => setAccountForm({ ...accountForm, balance: e.target.value })} required />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Credit Limit</Label>
-                        <Input type="number" step="0.01" value={accountForm.creditLimit} onChange={(e) => setAccountForm({ ...accountForm, creditLimit: e.target.value })} />
-                      </div>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Monthly Payment</Label>
-                        <Input type="number" step="0.01" value={accountForm.payment} onChange={(e) => setAccountForm({ ...accountForm, payment: e.target.value })} required />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Interest Rate %</Label>
-                        <Input type="number" step="0.01" value={accountForm.interestRate} onChange={(e) => setAccountForm({ ...accountForm, interestRate: e.target.value })} />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Notes</Label>
-                      <Textarea value={accountForm.notes} onChange={(e) => setAccountForm({ ...accountForm, notes: e.target.value })} placeholder="Autopay, lender info, minimum payment, details..." />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button type="submit">{accountForm.id ? "Update Account" : "Save Account"}</Button>
-                      <Button type="button" variant="outline" onClick={resetAccountForm}>Reset</Button>
-                    </div>
-                  </form>
-                </CardContent>
-              </Card>
-
-              <Card className="rounded-2xl shadow-sm">
-                <CardHeader>
-                  <CardTitle>Saved Accounts</CardTitle>
-                  <CardDescription>Your balances, limits, available credit, and warning colors.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {accounts.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed p-8 text-center text-sm text-slate-500">No accounts saved yet.</div>
-                  ) : (
-                    accounts.map((account) => {
-                      const availableCredit = account.creditLimit > 0 ? Math.max(0, account.creditLimit - Number(account.balance || 0)) : 0;
-                      const usagePercent = account.creditLimit > 0 ? Math.min(100, (account.balance / account.creditLimit) * 100) : 0;
-                      const cardTone = usagePercent >= 90 ? "border-red-300 bg-red-50" : usagePercent >= 75 ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white";
-                      return (
-                        <div key={account.id} className={`rounded-2xl border p-4 ${cardTone}`}>
-                          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                            <div>
-                              <div className="font-semibold">{account.name}</div>
-                              <div className="mt-1 flex flex-wrap gap-2">
-                                <Badge variant="secondary">{account.type}</Badge>
-                                <Badge variant="outline">Due {formatDate(account.dueDate)}</Badge>
-                                {account.creditLimit > 0 && usagePercent >= 75 && (
-                                  <Badge variant="outline" className={usagePercent >= 90 ? "border-red-500 text-red-700" : "border-amber-500 text-amber-700"}>
-                                    {usagePercent >= 90 ? "Near limit" : "Watch limit"}
-                                  </Badge>
-                                )}
-                              </div>
-                              {account.notes && <p className="mt-3 text-sm text-slate-600">{account.notes}</p>}
-                            </div>
-                            <div className="text-right">
-                              <div className="text-lg font-bold">{currency(account.balance)}</div>
-                              <div className="text-sm text-slate-500">Monthly {currency(account.payment)}</div>
-                              {account.creditLimit > 0 && (
-                                <div className="mt-1 text-sm text-slate-500">Limit {currency(account.creditLimit)} • Avail {currency(availableCredit)}</div>
-                              )}
-                            </div>
-                          </div>
-                          <div className="mt-4 flex flex-wrap gap-2">
-                            <Button size="sm" variant="outline" onClick={() => editAccount(account)}>Edit</Button>
-                            <Button size="sm" variant="outline" onClick={() => { setActiveTab("payments"); setPaymentForm((prev) => ({ ...prev, accountId: account.id })); }}>Pay</Button>
-                            <Button size="sm" variant="outline" onClick={() => { setActiveTab("expenses"); setExpenseForm((prev) => ({ ...prev, accountId: account.id })); }}>Add Purchase</Button>
-                            <Button size="sm" variant="destructive" onClick={() => deleteAccount(account.id)}>Delete</Button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="payments" className="space-y-4">
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Card className="rounded-2xl shadow-sm">
-                <CardHeader>
-                  <CardTitle>Record Payment</CardTitle>
-                  <CardDescription>Payments reduce the selected balance.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <form onSubmit={applyPayment} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label>Account</Label>
-                      <Select value={paymentForm.accountId} onValueChange={(value) => setPaymentForm({ ...paymentForm, accountId: value })}>
-                        <SelectTrigger><SelectValue placeholder="Choose account" /></SelectTrigger>
-                        <SelectContent>
-                          {accounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2"><Label>Amount</Label><Input type="number" step="0.01" value={paymentForm.amount} onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })} required /></div>
-                      <div className="space-y-2"><Label>Date</Label><Input type="date" value={paymentForm.date} onChange={(e) => setPaymentForm({ ...paymentForm, date: e.target.value })} required /></div>
-                    </div>
-                    <div className="space-y-2"><Label>Note</Label><Input value={paymentForm.note} onChange={(e) => setPaymentForm({ ...paymentForm, note: e.target.value })} placeholder="Minimum payment, extra payment..." /></div>
-                    <Button type="submit" className="w-full">Apply Payment</Button>
-                  </form>
-                </CardContent>
-              </Card>
-
-              <Card className="rounded-2xl shadow-sm">
-                <CardHeader>
-                  <CardTitle>Recent Payments</CardTitle>
-                  <CardDescription>Latest payment history by account.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {allPayments.slice(0, 10).map((item) => (
-                    <div key={item.id} className="flex items-center justify-between rounded-2xl border p-3">
-                      <div>
-                        <div className="font-medium">{item.accountName}</div>
-                        <div className="text-xs text-slate-500">{item.note || item.accountType}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-semibold text-teal-700">-{currency(item.amount)}</div>
-                        <div className="text-xs text-slate-500">{formatDate(item.date)}</div>
-                      </div>
-                    </div>
-                  ))}
-                  {allPayments.length === 0 && <div className="rounded-2xl border border-dashed p-8 text-center text-sm text-slate-500">No payments yet.</div>}
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="expenses" className="space-y-4">
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Card className="rounded-2xl shadow-sm">
-                <CardHeader>
-                  <CardTitle>Add Expense / Purchase</CardTitle>
-                  <CardDescription>Purchases increase the selected account balance.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <form onSubmit={addExpense} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label>Account</Label>
-                      <Select value={expenseForm.accountId} onValueChange={(value) => setExpenseForm({ ...expenseForm, accountId: value })}>
-                        <SelectTrigger><SelectValue placeholder="Choose account" /></SelectTrigger>
-                        <SelectContent>
-                          {accounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2"><Label>Amount</Label><Input type="number" step="0.01" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} required /></div>
-                      <div className="space-y-2"><Label>Date</Label><Input type="date" value={expenseForm.date} onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })} required /></div>
-                    </div>
-                    <div className="space-y-2"><Label>Description</Label><Input value={expenseForm.note} onChange={(e) => setExpenseForm({ ...expenseForm, note: e.target.value })} placeholder="Groceries, gas, tools, online order..." /></div>
-                    <Button type="submit" className="w-full">Add Expense</Button>
-                  </form>
-                </CardContent>
-              </Card>
-
-              <Card className="rounded-2xl shadow-sm">
-                <CardHeader>
-                  <CardTitle>Expense History by Account</CardTitle>
-                  <CardDescription>Recent purchases across all accounts.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {allExpenses.slice(0, 10).map((item) => (
-                    <div key={item.id} className="flex items-center justify-between rounded-2xl border p-3">
-                      <div>
-                        <div className="font-medium">{item.accountName}</div>
-                        <div className="text-xs text-slate-500">{item.note || item.accountType}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-semibold">+{currency(item.amount)}</div>
-                        <div className="text-xs text-slate-500">{formatDate(item.date)}</div>
-                      </div>
-                    </div>
-                  ))}
-                  {allExpenses.length === 0 && <div className="rounded-2xl border border-dashed p-8 text-center text-sm text-slate-500">No expenses yet.</div>}
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="income" className="space-y-4">
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Card className="rounded-2xl shadow-sm">
-                <CardHeader>
-                  <CardTitle>Weekly Income Setup</CardTitle>
-                  <CardDescription>Set your regular Friday income and any extra income sources.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label>Weekly Income</Label>
-                      <Input type="number" step="0.01" value={income.weeklyIncome} onChange={(e) => setIncome({ ...income, weeklyIncome: Number(e.target.value || 0) })} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Start Date</Label>
-                      <Input type="date" value={income.startDate} onChange={(e) => setIncome({ ...income, startDate: e.target.value })} />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Income Day</Label>
-                    <Select value={income.weekday} onValueChange={(value) => setIncome({ ...income, weekday: value })}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {weekdays.map((day, index) => <SelectItem key={day} value={String(index)}>{day}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="rounded-2xl border p-4">
-                    <div className="mb-4 flex items-center gap-2 font-semibold"><PlusCircle className="h-4 w-4" /> Other Income Sources</div>
-                    <form onSubmit={addExtraIncome} className="space-y-4">
-                      <div className="space-y-2"><Label>Income Source</Label><Input value={extraIncomeForm.source} onChange={(e) => setExtraIncomeForm({ ...extraIncomeForm, source: e.target.value })} placeholder="Side job, bonus, refund..." required /></div>
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div className="space-y-2"><Label>Amount</Label><Input type="number" step="0.01" value={extraIncomeForm.amount} onChange={(e) => setExtraIncomeForm({ ...extraIncomeForm, amount: e.target.value })} required /></div>
-                        <div className="space-y-2"><Label>Date</Label><Input type="date" value={extraIncomeForm.date} onChange={(e) => setExtraIncomeForm({ ...extraIncomeForm, date: e.target.value })} required /></div>
-                      </div>
-                      <div className="space-y-2"><Label>Note</Label><Input value={extraIncomeForm.note} onChange={(e) => setExtraIncomeForm({ ...extraIncomeForm, note: e.target.value })} placeholder="Optional details" /></div>
-                      <Button type="submit" className="w-full">Add Extra Income</Button>
-                    </form>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="rounded-2xl shadow-sm">
-                <CardHeader>
-                  <CardTitle>Income History</CardTitle>
-                  <CardDescription>Weekly setup plus your extra income entries.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="rounded-2xl border p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <div className="font-medium">Weekly Income</div>
-                        <div className="text-xs text-slate-500">Every {weekdays[Number(income.weekday)]}, starting {formatDate(income.startDate)}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-semibold">{currency(income.weeklyIncome)}</div>
-                        <div className="text-xs text-slate-500">{summary.weeksPaid} week(s)</div>
-                      </div>
-                    </div>
-                  </div>
-                  {extraIncome.slice(0, 10).map((item) => (
-                    <div key={item.id} className="flex items-center justify-between rounded-2xl border p-3">
-                      <div>
-                        <div className="font-medium">{item.source}</div>
-                        <div className="text-xs text-slate-500">{item.note || "Extra income"}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-semibold text-teal-700">+{currency(item.amount)}</div>
-                        <div className="text-xs text-slate-500">{formatDate(item.date)}</div>
-                      </div>
-                    </div>
-                  ))}
-                  {extraIncome.length === 0 && <div className="rounded-2xl border border-dashed p-8 text-center text-sm text-slate-500">No extra income yet.</div>}
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="calendar" className="space-y-4">
-            <Card className="rounded-2xl shadow-sm">
-              <CardHeader>
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <CardTitle>Monthly Calendar View</CardTitle>
-                    <CardDescription>See due dates, weekly income, extra income, payments, and purchases by day.</CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" onClick={() => setCalendarMonth((prev) => prev.month === 0 ? { year: prev.year - 1, month: 11 } : { year: prev.year, month: prev.month - 1 })}>Prev</Button>
-                    <div className="min-w-[130px] text-center text-sm font-medium">{monthNames[calendarMonth.month]} {calendarMonth.year}</div>
-                    <Button variant="outline" onClick={() => setCalendarMonth((prev) => prev.month === 11 ? { year: prev.year + 1, month: 0 } : { year: prev.year, month: prev.month + 1 })}>Next</Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="mb-4 grid grid-cols-4 gap-2 text-xs md:grid-cols-8">
-                  <div className="rounded-full bg-slate-100 px-3 py-1 text-center">Due</div>
-                  <div className="rounded-full bg-teal-100 px-3 py-1 text-center">Income</div>
-                  <div className="rounded-full bg-red-100 px-3 py-1 text-center">Payment</div>
-                  <div className="rounded-full bg-amber-100 px-3 py-1 text-center">Expense</div>
-                </div>
-                <div className="grid grid-cols-7 gap-2 text-xs font-medium text-slate-500">
-                  {weekdays.map((day) => <div key={day} className="px-2 py-1 text-center">{day.slice(0, 3)}</div>)}
-                </div>
-                <div className="mt-2 grid grid-cols-7 gap-2">
-                  {calendarGrid.map((cell, index) => (
-                    <div key={cell ? cell.dateStr : `blank-${index}`} className="min-h-[120px] rounded-2xl border bg-white p-2">
-                      {cell && (
-                        <>
-                          <div className="mb-2 text-sm font-semibold">{cell.day}</div>
-                          <div className="space-y-1">
-                            {cell.items.slice(0, 4).map((item) => {
-                              const tone = item.kind === "income" ? "bg-teal-100 text-teal-800" : item.kind === "payment" ? "bg-red-100 text-red-800" : item.kind === "expense" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-800";
-                              return (
-                                <div key={item.id} className={`rounded-lg px-2 py-1 text-[10px] ${tone}`}>
-                                  <div className="truncate font-medium">{item.title}</div>
-                                  <div>{currency(item.amount)}</div>
-                                </div>
-                              );
-                            })}
-                            {cell.items.length > 4 && <div className="text-[10px] text-slate-400">+{cell.items.length - 4} more</div>}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
-
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Card className="rounded-2xl shadow-sm lg:col-span-2">
-            <CardHeader>
-              <CardTitle>Quick Disclosure</CardTitle>
-              <CardDescription>Clean view of bills, due dates, limits, and notes.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {accounts.length === 0 ? (
-                <div className="rounded-2xl border border-dashed p-8 text-center text-sm text-slate-500">Your bill disclosure will appear here.</div>
-              ) : (
-                accounts.map((item) => {
-                  const availableCredit = item.creditLimit > 0 ? Math.max(0, item.creditLimit - Number(item.balance || 0)) : 0;
-                  const usagePercent = item.creditLimit > 0 ? Math.min(100, (item.balance / item.creditLimit) * 100) : 0;
-                  return (
-                    <div key={item.id} className="rounded-2xl border p-4">
-                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <div>
-                          <div className="font-semibold">{item.name}</div>
-                          <div className="mt-1 flex flex-wrap gap-2">
-                            <Badge variant="secondary">{item.type}</Badge>
-                            <Badge variant="outline">Due {formatDate(item.dueDate)}</Badge>
-                            {item.creditLimit > 0 && usagePercent >= 75 && (
-                              <Badge variant="outline" className={usagePercent >= 90 ? "border-red-500 text-red-700" : "border-amber-500 text-amber-700"}>
-                                {usagePercent >= 90 ? "Near limit" : "High usage"}
-                              </Badge>
-                            )}
-                          </div>
-                          {item.notes && <p className="mt-3 text-sm text-slate-600">{item.notes}</p>}
-                        </div>
-                        <div className="text-right text-sm">
-                          <div><span className="text-slate-500">Balance:</span> <span className="font-semibold">{currency(item.balance)}</span></div>
-                          <div><span className="text-slate-500">Payment:</span> <span className="font-semibold">{currency(item.payment)}</span></div>
-                          {item.creditLimit > 0 && <div><span className="text-slate-500">Available credit:</span> <span className="font-semibold">{currency(availableCredit)}</span></div>}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-2xl shadow-sm">
-            <CardHeader>
-              <CardTitle>Totals</CardTitle>
-              <CardDescription>Your money flow at a glance.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4 text-sm">
-              <div className="flex items-center justify-between rounded-2xl border p-3"><span className="flex items-center gap-2"><PiggyBank className="h-4 w-4" /> Base income</span><strong>{currency(summary.baseIncome)}</strong></div>
-              <div className="flex items-center justify-between rounded-2xl border p-3"><span className="flex items-center gap-2"><PlusCircle className="h-4 w-4" /> Extra income</span><strong>{currency(summary.extraIncomeTotal)}</strong></div>
-              <div className="flex items-center justify-between rounded-2xl border p-3"><span className="flex items-center gap-2"><DollarSign className="h-4 w-4" /> Payments made</span><strong>{currency(summary.totalPaymentsMade)}</strong></div>
-              <div className="flex items-center justify-between rounded-2xl border p-3"><span className="flex items-center gap-2"><Receipt className="h-4 w-4" /> Expenses made</span><strong>{currency(summary.totalExpensesMade)}</strong></div>
-              <div className="flex items-center justify-between rounded-2xl border bg-slate-900 p-3 text-white"><span>Total available cash</span><strong>{currency(summary.availableCash)}</strong></div>
-            </CardContent>
-          </Card>
+      </div>
+      <div class="grid-2" style="margin-top:18px;">
+        <div class="card">
+          <h2>Spending by Account</h2>
+          <div class="chart-wrap"><canvas id="pieChart"></canvas></div>
+        </div>
+        <div class="card">
+          <h2>Recent Activity</h2>
+          <div id="recentActivity" class="activity-list"></div>
         </div>
       </div>
     </div>
-  );
-}
+
+    <div class="tab-panel" id="tab-accounts">
+      <div class="grid-2">
+        <div class="card">
+          <h2>Add / Update Account</h2>
+          <form id="accountForm">
+            <input type="hidden" id="accountId" />
+            <div class="grid-form">
+              <div class="full">
+                <label for="name">Account Name</label>
+                <input id="name" required placeholder="Chase Credit Card" />
+              </div>
+              <div>
+                <label for="type">Type</label>
+                <select id="type">
+                  <option>Credit Card</option>
+                  <option>Car Payment</option>
+                  <option>Affirm</option>
+                  <option>Loan</option>
+                  <option>Bill</option>
+                </select>
+              </div>
+              <div>
+                <label for="dueDate">Due Date</label>
+                <input id="dueDate" type="date" required />
+              </div>
+              <div>
+                <label for="balance">Current Balance ($)</label>
+                <input id="balance" type="number" step="0.01" min="0" required />
+              </div>
+              <div>
+                <label for="creditLimit">Credit Limit ($)</label>
+                <input id="creditLimit" type="number" step="0.01" min="0" />
+              </div>
+              <div>
+                <label for="payment">Monthly Payment ($)</label>
+                <input id="payment" type="number" step="0.01" min="0" required />
+              </div>
+              <div>
+                <label for="interestRate">Interest Rate %</label>
+                <input id="interestRate" type="number" step="0.01" min="0" />
+              </div>
+              <div class="full">
+                <label for="notes">Notes</label>
+                <textarea id="notes" placeholder="Autopay, lender, minimum payment, details..."></textarea>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit">Save Account</button>
+              <button type="button" class="secondary" id="resetAccountBtn">Reset</button>
+            </div>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Saved Accounts</h2>
+          <div id="savedAccounts" class="account-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="tab-payments">
+      <div class="grid-2">
+        <div class="card">
+          <h2>Record Payment</h2>
+          <form id="paymentForm">
+            <div class="grid-form">
+              <div class="full">
+                <label for="paymentAccountId">Account</label>
+                <select id="paymentAccountId" required></select>
+              </div>
+              <div>
+                <label for="paymentAmount">Amount ($)</label>
+                <input id="paymentAmount" type="number" step="0.01" min="0.01" required />
+              </div>
+              <div>
+                <label for="paymentDate">Date</label>
+                <input id="paymentDate" type="date" required />
+              </div>
+              <div class="full">
+                <label for="paymentNote">Note</label>
+                <input id="paymentNote" placeholder="Minimum payment, extra payment..." />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit">Apply Payment</button>
+            </div>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Recent Payments</h2>
+          <div id="paymentHistory" class="history-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="tab-expenses">
+      <div class="grid-2">
+        <div class="card">
+          <h2>Add Expense / Purchase</h2>
+          <form id="expenseForm">
+            <div class="grid-form">
+              <div class="full">
+                <label for="expenseAccountId">Account</label>
+                <select id="expenseAccountId" required></select>
+              </div>
+              <div>
+                <label for="expenseAmount">Amount ($)</label>
+                <input id="expenseAmount" type="number" step="0.01" min="0.01" required />
+              </div>
+              <div>
+                <label for="expenseDate">Date</label>
+                <input id="expenseDate" type="date" required />
+              </div>
+              <div class="full">
+                <label for="expenseNote">Description</label>
+                <input id="expenseNote" placeholder="Groceries, gas, tools, online order..." />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit">Add Expense</button>
+            </div>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Expense History by Account</h2>
+          <div id="expenseHistory" class="history-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="tab-income">
+      <div class="grid-2">
+        <div class="card">
+          <h2>Weekly Income Setup</h2>
+          <form id="incomeForm">
+            <div class="grid-form">
+              <div>
+                <label for="weeklyIncome">Weekly Income ($)</label>
+                <input id="weeklyIncome" type="number" step="0.01" min="0" />
+              </div>
+              <div>
+                <label for="incomeStartDate">Start Date</label>
+                <input id="incomeStartDate" type="date" />
+              </div>
+              <div class="full">
+                <label for="incomeWeekday">Income Day</label>
+                <select id="incomeWeekday">
+                  <option value="0">Sunday</option>
+                  <option value="1">Monday</option>
+                  <option value="2">Tuesday</option>
+                  <option value="3">Wednesday</option>
+                  <option value="4">Thursday</option>
+                  <option value="5">Friday</option>
+                  <option value="6">Saturday</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit">Save Weekly Income</button>
+            </div>
+          </form>
+
+          <div style="margin-top:20px; padding-top:18px; border-top:1px solid var(--line);">
+            <h3>Other Income Sources</h3>
+            <form id="extraIncomeForm">
+              <div class="grid-form">
+                <div>
+                  <label for="extraIncomeSource">Income Source</label>
+                  <input id="extraIncomeSource" placeholder="Side job, refund, bonus..." required />
+                </div>
+                <div>
+                  <label for="extraIncomeAmount">Amount ($)</label>
+                  <input id="extraIncomeAmount" type="number" step="0.01" min="0.01" required />
+                </div>
+                <div>
+                  <label for="extraIncomeDate">Date</label>
+                  <input id="extraIncomeDate" type="date" required />
+                </div>
+                <div class="full">
+                  <label for="extraIncomeNote">Note</label>
+                  <input id="extraIncomeNote" placeholder="Optional details" />
+                </div>
+              </div>
+              <div class="form-actions">
+                <button type="submit">Add Extra Income</button>
+              </div>
+            </form>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Income History</h2>
+          <div id="incomeHistory" class="history-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="tab-calendar">
+      <div class="card">
+        <div class="calendar-controls">
+          <div>
+            <h2 style="margin-bottom:6px;">Monthly Calendar View</h2>
+            <div class="muted">Due dates, weekly income, extra income, payments, and purchases by day.</div>
+          </div>
+          <div class="actions">
+            <button class="secondary" id="prevMonthBtn">Prev</button>
+            <button class="secondary" id="monthLabel" style="min-width:150px;"></button>
+            <button class="secondary" id="nextMonthBtn">Next</button>
+          </div>
+        </div>
+        <div class="calendar-legend">
+          <span class="legend-pill legend-due">Due</span>
+          <span class="legend-pill legend-income">Income</span>
+          <span class="legend-pill legend-payment">Payment</span>
+          <span class="legend-pill legend-expense">Expense</span>
+        </div>
+        <div class="calendar-weekdays" id="calendarWeekdays"></div>
+        <div class="calendar-grid" id="calendarGrid"></div>
+      </div>
+    </div>
+
+    <div class="grid-3" style="margin-top:20px;">
+      <div class="card">
+        <h2>Quick Disclosure</h2>
+        <div id="disclosureList" class="disclosure-list"></div>
+      </div>
+      <div class="card">
+        <h2>Totals</h2>
+        <div id="totalsBox" class="history-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const ACCOUNTS_KEY = 'friendly_finance_accounts_v1';
+    const INCOME_KEY = 'friendly_finance_income_v1';
+    const EXTRA_INCOME_KEY = 'friendly_finance_extra_income_v1';
+    const weekdays = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    let barChart, pieChart;
+    let calendarState = (() => {
+      const now = new Date();
+      return { year: now.getFullYear(), month: now.getMonth() };
+    })();
+
+    const $ = (id) => document.getElementById(id);
+    const todayString = () => new Date().toISOString().split('T')[0];
+    const currency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(Number(value || 0));
+    const formatDate = (dateString) => {
+      if (!dateString) return '-';
+      const date = new Date(dateString + 'T00:00:00');
+      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    };
+
+    function loadJSON(key, fallback) {
+      try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch { return fallback; }
+    }
+    function saveJSON(key, value) { localStorage.setItem(key, JSON.stringify(value)); }
+
+    function loadAccounts() {
+      return loadJSON(ACCOUNTS_KEY, []).map(account => ({
+        ...account,
+        creditLimit: Number(account.creditLimit || 0),
+        paymentHistory: Array.isArray(account.paymentHistory) ? account.paymentHistory : [],
+        expenseHistory: Array.isArray(account.expenseHistory) ? account.expenseHistory : []
+      }));
+    }
+    function saveAccounts(accounts) { saveJSON(ACCOUNTS_KEY, accounts); }
+    function loadIncome() { return loadJSON(INCOME_KEY, { weeklyIncome: 1568, startDate: todayString(), weekday: '5' }); }
+    function saveIncome(income) { saveJSON(INCOME_KEY, income); }
+    function loadExtraIncome() { const x = loadJSON(EXTRA_INCOME_KEY, []); return Array.isArray(x) ? x : []; }
+    function saveExtraIncome(items) { saveJSON(EXTRA_INCOME_KEY, items); }
+
+    function countIncomeOccurrences(startDateString, weekdayString, endDate = new Date()) {
+      if (!startDateString) return 0;
+      const targetWeekday = Number(weekdayString ?? 5);
+      const start = new Date(startDateString + 'T00:00:00');
+      const endCopy = new Date(endDate);
+      endCopy.setHours(0,0,0,0);
+      if (start > endCopy) return 0;
+      const first = new Date(start);
+      const dayDiff = (targetWeekday - first.getDay() + 7) % 7;
+      first.setDate(first.getDate() + dayDiff);
+      if (first > endCopy) return 0;
+      const diffMs = endCopy - first;
+      return Math.floor(diffMs / (1000*60*60*24*7)) + 1;
+    }
+
+    function getSummary(accounts, income, extraIncome) {
+      const totalBalance = accounts.reduce((sum, a) => sum + Number(a.balance || 0), 0);
+      const totalMonthly = accounts.reduce((sum, a) => sum + Number(a.payment || 0), 0);
+      const totalPaymentsMade = accounts.reduce((sum, a) => sum + a.paymentHistory.reduce((x, p) => x + Number(p.amount || 0), 0), 0);
+      const totalExpensesMade = accounts.reduce((sum, a) => sum + a.expenseHistory.reduce((x, e) => x + Number(e.amount || 0), 0), 0);
+      const extraIncomeTotal = extraIncome.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+      const weeksPaid = countIncomeOccurrences(income.startDate, income.weekday);
+      const baseIncome = weeksPaid * Number(income.weeklyIncome || 0);
+      const totalIncome = baseIncome + extraIncomeTotal;
+      const availableCash = totalIncome - totalPaymentsMade - totalExpensesMade;
+      const nextDue = [...accounts].filter(a => a.dueDate).sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate))[0];
+      return { totalBalance, totalMonthly, totalPaymentsMade, totalExpensesMade, extraIncomeTotal, weeksPaid, baseIncome, totalIncome, availableCash, nextDue };
+    }
+
+    function getAllPayments(accounts) {
+      return accounts.flatMap(account => account.paymentHistory.map(item => ({ ...item, accountName: account.name, accountType: account.type }))).sort((a,b) => new Date(b.date) - new Date(a.date));
+    }
+    function getAllExpenses(accounts) {
+      return accounts.flatMap(account => account.expenseHistory.map(item => ({ ...item, accountName: account.name, accountType: account.type }))).sort((a,b) => new Date(b.date) - new Date(a.date));
+    }
+
+    function usageData(account) {
+      const availableCredit = account.creditLimit > 0 ? Math.max(0, account.creditLimit - Number(account.balance || 0)) : 0;
+      const usagePercent = account.creditLimit > 0 ? Math.min(100, (Number(account.balance || 0) / account.creditLimit) * 100) : 0;
+      return { availableCredit, usagePercent };
+    }
+
+    function renderStats(summary, accounts) {
+      const cards = [
+        { label: 'Available Cash', value: currency(summary.availableCash), note: `${currency(summary.totalPaymentsMade)} payments • ${currency(summary.totalExpensesMade)} expenses` },
+        { label: 'Total Income', value: currency(summary.totalIncome), note: `${summary.weeksPaid} ${weekdays[5]}s counted + ${currency(summary.extraIncomeTotal)} extra income` },
+        { label: 'Total Balance Owed', value: currency(summary.totalBalance), note: `${accounts.length} account(s) tracked` },
+        { label: 'Next Due', value: summary.nextDue ? summary.nextDue.name : 'No due dates', note: summary.nextDue ? `${formatDate(summary.nextDue.dueDate)} • ${currency(summary.nextDue.payment)}` : 'Add an account to start' },
+      ];
+      $('stats').innerHTML = cards.map(card => `
+        <div class="card">
+          <div class="stat-label">${card.label}</div>
+          <div class="stat-value">${card.value}</div>
+          <div class="stat-note">${card.note}</div>
+        </div>
+      `).join('');
+    }
+
+    function daysUntil(dateString) {
+      const today = new Date(); today.setHours(0,0,0,0);
+      const due = new Date(dateString + 'T00:00:00');
+      return Math.round((due - today) / (1000*60*60*24));
+    }
+
+    function renderDashboardAccounts(accounts) {
+      if (!accounts.length) {
+        $('dashboardAccounts').innerHTML = '<div class="empty">No accounts yet.</div>';
+        return;
+      }
+      $('dashboardAccounts').innerHTML = accounts.slice().sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate)).map(account => {
+        const { availableCredit, usagePercent } = usageData(account);
+        const days = daysUntil(account.dueDate);
+        const tone = usagePercent >= 90 ? 'danger' : usagePercent >= 75 ? 'warn' : '';
+        const progressTone = usagePercent >= 90 ? 'danger' : usagePercent >= 75 ? 'warn' : '';
+        return `
+          <div class="account-item ${tone}">
+            <div class="item-top">
+              <div>
+                <strong>${account.name}</strong>
+                <div class="badges">
+                  <span class="badge">${account.type}</span>
+                  <span class="badge ${days < 0 ? 'danger' : days <= 7 ? 'warn' : 'good'}">${days < 0 ? `Past due by ${Math.abs(days)} day(s)` : `Due in ${days} day(s)`}</span>
+                  ${account.creditLimit > 0 && usagePercent >= 75 ? `<span class="badge ${usagePercent >= 90 ? 'danger' : 'warn'}">${usagePercent >= 90 ? 'Near limit' : 'High usage'}</span>` : ''}
+                </div>
+              </div>
+              <div class="right">
+                <div><strong>${currency(account.balance)}</strong></div>
+                <div class="muted">Monthly ${currency(account.payment)}</div>
+              </div>
+            </div>
+            ${account.creditLimit > 0 ? `
+              <div class="progress-wrap">
+                <div class="muted" style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                  <span>Available credit ${currency(availableCredit)}</span>
+                  <span>${Math.round(usagePercent)}% used</span>
+                </div>
+                <div class="progress-track"><div class="progress-bar ${progressTone}" style="width:${usagePercent}%"></div></div>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderSavedAccounts(accounts) {
+      if (!accounts.length) {
+        $('savedAccounts').innerHTML = '<div class="empty">No accounts saved yet.</div>';
+        return;
+      }
+      $('savedAccounts').innerHTML = accounts.map(account => {
+        const { availableCredit, usagePercent } = usageData(account);
+        const tone = usagePercent >= 90 ? 'danger' : usagePercent >= 75 ? 'warn' : '';
+        return `
+          <div class="account-item ${tone}">
+            <div class="item-top">
+              <div>
+                <strong>${account.name}</strong>
+                <div class="badges">
+                  <span class="badge">${account.type}</span>
+                  <span class="badge">Due ${formatDate(account.dueDate)}</span>
+                  ${account.creditLimit > 0 && usagePercent >= 75 ? `<span class="badge ${usagePercent >= 90 ? 'danger' : 'warn'}">${usagePercent >= 90 ? 'Near limit' : 'Watch limit'}</span>` : ''}
+                </div>
+                ${account.notes ? `<div class="muted" style="margin-top:10px;">${account.notes}</div>` : ''}
+              </div>
+              <div class="right">
+                <div><strong>${currency(account.balance)}</strong></div>
+                <div class="muted">Monthly ${currency(account.payment)}</div>
+                ${account.creditLimit > 0 ? `<div class="muted">Limit ${currency(account.creditLimit)} • Avail ${currency(availableCredit)}</div>` : ''}
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="secondary" onclick="editAccount('${account.id}')">Edit</button>
+              <button class="secondary" onclick="setQuickPay('${account.id}')">Pay</button>
+              <button class="secondary" onclick="setQuickExpense('${account.id}')">Add Purchase</button>
+              <button class="danger" onclick="deleteAccount('${account.id}')">Delete</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderHistoryList(targetId, items, sign, emptyText) {
+      if (!items.length) {
+        $(targetId).innerHTML = `<div class="empty">${emptyText}</div>`;
+        return;
+      }
+      $(targetId).innerHTML = items.slice(0, 10).map(item => `
+        <div class="history-item">
+          <div class="item-top">
+            <div>
+              <strong>${item.accountName || item.source || 'Weekly Income'}</strong>
+              <div class="muted">${item.note || item.accountType || ''}</div>
+            </div>
+            <div class="right">
+              <div><strong>${sign}${currency(item.amount)}</strong></div>
+              <div class="muted">${formatDate(item.date)}</div>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderRecentActivity(payments, expenses) {
+      const items = [...payments.slice(0,4).map(x => ({...x, kind:'Payment'})), ...expenses.slice(0,4).map(x => ({...x, kind:'Expense'}))]
+        .sort((a,b) => new Date(b.date) - new Date(a.date))
+        .slice(0,8);
+      if (!items.length) {
+        $('recentActivity').innerHTML = '<div class="empty">No activity yet.</div>';
+        return;
+      }
+      $('recentActivity').innerHTML = items.map(item => `
+        <div class="history-item">
+          <div class="item-top">
+            <div>
+              <strong>${item.accountName}</strong>
+              <div class="muted">${item.kind} • ${item.note || item.accountType}</div>
+            </div>
+            <div class="right">
+              <div><strong>${item.kind === 'Payment' ? '-' : '+'}${currency(item.amount)}</strong></div>
+              <div class="muted">${formatDate(item.date)}</div>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderIncomeHistory(income, extraIncome, summary) {
+      const weeklyCard = `
+        <div class="history-item">
+          <div class="item-top">
+            <div>
+              <strong>Weekly Income</strong>
+              <div class="muted">Every ${weekdays[Number(income.weekday)]}, starting ${formatDate(income.startDate)}</div>
+            </div>
+            <div class="right">
+              <div><strong>${currency(income.weeklyIncome)}</strong></div>
+              <div class="muted">${summary.weeksPaid} week(s)</div>
+            </div>
+          </div>
+        </div>
+      `;
+      const others = extraIncome.slice(0,10).map(item => `
+        <div class="history-item">
+          <div class="item-top">
+            <div>
+              <strong>${item.source}</strong>
+              <div class="muted">${item.note || 'Extra income'}</div>
+            </div>
+            <div class="right">
+              <div><strong>+${currency(item.amount)}</strong></div>
+              <div class="muted">${formatDate(item.date)}</div>
+            </div>
+          </div>
+        </div>
+      `).join('');
+      $('incomeHistory').innerHTML = weeklyCard + (others || '<div class="empty">No extra income yet.</div>');
+    }
+
+    function renderDisclosure(accounts) {
+      if (!accounts.length) {
+        $('disclosureList').innerHTML = '<div class="empty">Your bill disclosure will appear here.</div>';
+        return;
+      }
+      $('disclosureList').innerHTML = accounts.map(item => {
+        const { availableCredit, usagePercent } = usageData(item);
+        return `
+          <div class="disclosure-item">
+            <div class="item-top">
+              <div>
+                <strong>${item.name}</strong>
+                <div class="badges">
+                  <span class="badge">${item.type}</span>
+                  <span class="badge">Due ${formatDate(item.dueDate)}</span>
+                  ${item.creditLimit > 0 && usagePercent >= 75 ? `<span class="badge ${usagePercent >= 90 ? 'danger' : 'warn'}">${usagePercent >= 90 ? 'Near limit' : 'High usage'}</span>` : ''}
+                </div>
+                ${item.notes ? `<div class="muted" style="margin-top:10px;">${item.notes}</div>` : ''}
+              </div>
+              <div class="right muted">
+                <div>Balance: <strong>${currency(item.balance)}</strong></div>
+                <div>Payment: <strong>${currency(item.payment)}</strong></div>
+                ${item.creditLimit > 0 ? `<div>Available credit: <strong>${currency(availableCredit)}</strong></div>` : ''}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderTotals(summary) {
+      $('totalsBox').innerHTML = `
+        <div class="history-item"><div class="item-top"><span>Base income</span><strong>${currency(summary.baseIncome)}</strong></div></div>
+        <div class="history-item"><div class="item-top"><span>Extra income</span><strong>${currency(summary.extraIncomeTotal)}</strong></div></div>
+        <div class="history-item"><div class="item-top"><span>Payments made</span><strong>${currency(summary.totalPaymentsMade)}</strong></div></div>
+        <div class="history-item"><div class="item-top"><span>Expenses made</span><strong>${currency(summary.totalExpensesMade)}</strong></div></div>
+        <div class="history-item" style="background:#0f172a;color:white;"><div class="item-top"><span>Total available cash</span><strong>${currency(summary.availableCash)}</strong></div></div>
+      `;
+    }
+
+    function renderAccountOptions(accounts) {
+      const options = accounts.map(account => `<option value="${account.id}">${account.name}</option>`).join('');
+      $('paymentAccountId').innerHTML = options || '<option value="">No accounts</option>';
+      $('expenseAccountId').innerHTML = options || '<option value="">No accounts</option>';
+    }
+
+    function renderCharts(accounts, payments, expenses, extraIncome) {
+      const bucket = new Map();
+      const add = (date, key, amount) => {
+        if (!date) return;
+        const d = new Date(date + 'T00:00:00');
+        const label = `${monthNames[d.getMonth()]} ${String(d.getFullYear()).slice(-2)}`;
+        if (!bucket.has(label)) bucket.set(label, { month: label, income: 0, payments: 0, expenses: 0 });
+        bucket.get(label)[key] += Number(amount || 0);
+      };
+      payments.forEach(x => add(x.date, 'payments', x.amount));
+      expenses.forEach(x => add(x.date, 'expenses', x.amount));
+      extraIncome.forEach(x => add(x.date, 'income', x.amount));
+      const barData = Array.from(bucket.values()).slice(-6);
+
+      if (barChart) barChart.destroy();
+      barChart = new Chart($('barChart'), {
+        type: 'bar',
+        data: {
+          labels: barData.map(x => x.month),
+          datasets: [
+            { label: 'Income', data: barData.map(x => x.income), backgroundColor: '#14b8a6' },
+            { label: 'Payments', data: barData.map(x => x.payments), backgroundColor: '#ef4444' },
+            { label: 'Expenses', data: barData.map(x => x.expenses), backgroundColor: '#f59e0b' },
+          ]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+      });
+
+      const pieData = accounts.map(account => ({
+        name: account.name,
+        value: account.expenseHistory.reduce((sum, x) => sum + Number(x.amount || 0), 0)
+      })).filter(x => x.value > 0).slice(0, 6);
+
+      if (pieChart) pieChart.destroy();
+      pieChart = new Chart($('pieChart'), {
+        type: 'pie',
+        data: {
+          labels: pieData.map(x => x.name),
+          datasets: [{
+            data: pieData.map(x => x.value),
+            backgroundColor: ['#0f172a','#334155','#64748b','#94a3b8','#cbd5e1','#e2e8f0']
+          }]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+      });
+    }
+
+    function getCalendarItems(accounts, income, extraIncome, payments, expenses) {
+      const items = [];
+      const month = calendarState.month;
+      const year = calendarState.year;
+      accounts.forEach(account => {
+        if (!account.dueDate) return;
+        const d = new Date(account.dueDate + 'T00:00:00');
+        if (d.getMonth() === month && d.getFullYear() === year) items.push({ id: 'due-' + account.id, date: account.dueDate, title: account.name + ' due', amount: account.payment, kind: 'due' });
+      });
+      payments.forEach(item => { const d = new Date(item.date + 'T00:00:00'); if (d.getMonth() === month && d.getFullYear() === year) items.push({ id: 'pay-' + item.id, date: item.date, title: item.accountName + ' payment', amount: item.amount, kind: 'payment' }); });
+      expenses.forEach(item => { const d = new Date(item.date + 'T00:00:00'); if (d.getMonth() === month && d.getFullYear() === year) items.push({ id: 'exp-' + item.id, date: item.date, title: item.accountName + ' expense', amount: item.amount, kind: 'expense' }); });
+      extraIncome.forEach(item => { const d = new Date(item.date + 'T00:00:00'); if (d.getMonth() === month && d.getFullYear() === year) items.push({ id: 'inc-' + item.id, date: item.date, title: item.source, amount: item.amount, kind: 'income' }); });
+
+      if (income.startDate) {
+        const monthEnd = new Date(year, month + 1, 0);
+        const current = new Date(year, month, 1);
+        while (current <= monthEnd) {
+          if (current.getDay() === Number(income.weekday)) {
+            const currentStr = current.toISOString().split('T')[0];
+            if (currentStr >= income.startDate) items.push({ id: 'weekly-' + currentStr, date: currentStr, title: 'Weekly income', amount: income.weeklyIncome, kind: 'income' });
+          }
+          current.setDate(current.getDate() + 1);
+        }
+      }
+      return items;
+    }
+
+    function renderCalendar(accounts, income, extraIncome, payments, expenses) {
+      $('monthLabel').textContent = `${monthNames[calendarState.month]} ${calendarState.year}`;
+      $('calendarWeekdays').innerHTML = weekdays.map(day => `<div>${day.slice(0,3)}</div>`).join('');
+      const items = getCalendarItems(accounts, income, extraIncome, payments, expenses);
+      const firstDay = new Date(calendarState.year, calendarState.month, 1).getDay();
+      const daysInMonth = new Date(calendarState.year, calendarState.month + 1, 0).getDate();
+      const cells = [];
+      for (let i = 0; i < firstDay; i++) cells.push('<div class="day-cell"></div>');
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = `${calendarState.year}-${String(calendarState.month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+        const dayItems = items.filter(item => item.date === dateStr).slice(0,4);
+        cells.push(`
+          <div class="day-cell">
+            <div class="day-number">${day}</div>
+            ${dayItems.map(item => `<div class="day-item kind-${item.kind}"><div>${item.title}</div><div>${currency(item.amount)}</div></div>`).join('')}
+            ${items.filter(item => item.date === dateStr).length > 4 ? `<div class="muted" style="font-size:10px;">+${items.filter(item => item.date === dateStr).length - 4} more</div>` : ''}
+          </div>
+        `);
+      }
+      $('calendarGrid').innerHTML = cells.join('');
+    }
+
+    function populateForms(income) {
+      $('paymentDate').value = todayString();
+      $('expenseDate').value = todayString();
+      $('extraIncomeDate').value = todayString();
+      $('dueDate').value = $('dueDate').value || todayString();
+      $('weeklyIncome').value = income.weeklyIncome || 1568;
+      $('incomeStartDate').value = income.startDate || todayString();
+      $('incomeWeekday').value = income.weekday || '5';
+    }
+
+    function resetAccountForm() {
+      $('accountForm').reset();
+      $('accountId').value = '';
+      $('type').value = 'Credit Card';
+      $('dueDate').value = todayString();
+    }
+
+    function editAccount(id) {
+      const account = loadAccounts().find(x => x.id === id);
+      if (!account) return;
+      $('accountId').value = account.id;
+      $('name').value = account.name;
+      $('type').value = account.type;
+      $('balance').value = account.balance;
+      $('creditLimit').value = account.creditLimit || '';
+      $('payment').value = account.payment;
+      $('dueDate').value = account.dueDate;
+      $('interestRate').value = account.interestRate;
+      $('notes').value = account.notes || '';
+      switchTab('accounts');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    window.editAccount = editAccount;
+
+    function deleteAccount(id) {
+      if (!confirm('Delete this account?')) return;
+      saveAccounts(loadAccounts().filter(x => x.id !== id));
+      renderAll();
+    }
+    window.deleteAccount = deleteAccount;
+
+    function setQuickPay(id) {
+      $('paymentAccountId').value = id;
+      switchTab('payments');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    window.setQuickPay = setQuickPay;
+
+    function setQuickExpense(id) {
+      $('expenseAccountId').value = id;
+      switchTab('expenses');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    window.setQuickExpense = setQuickExpense;
+
+    function switchTab(name) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
+      document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.toggle('active', panel.id === 'tab-' + name));
+    }
+
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+
+    $('accountForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const accounts = loadAccounts();
+      const existing = accounts.find(x => x.id === $('accountId').value);
+      const account = {
+        id: $('accountId').value || crypto.randomUUID(),
+        name: $('name').value.trim(),
+        type: $('type').value,
+        balance: Number($('balance').value || 0),
+        creditLimit: Number($('creditLimit').value || 0),
+        payment: Number($('payment').value || 0),
+        dueDate: $('dueDate').value,
+        interestRate: $('interestRate').value === '' ? '' : Number($('interestRate').value),
+        notes: $('notes').value.trim(),
+        paymentHistory: existing?.paymentHistory || [],
+        expenseHistory: existing?.expenseHistory || []
+      };
+      const idx = accounts.findIndex(x => x.id === account.id);
+      if (idx >= 0) accounts[idx] = account; else accounts.push(account);
+      saveAccounts(accounts);
+      resetAccountForm();
+      renderAll();
+    });
+
+    $('paymentForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const accounts = loadAccounts();
+      const amount = Number($('paymentAmount').value || 0);
+      const account = accounts.find(x => x.id === $('paymentAccountId').value);
+      if (!account || amount <= 0) return;
+      account.balance = Math.max(0, Number(account.balance || 0) - amount);
+      account.paymentHistory.unshift({ id: crypto.randomUUID(), amount, date: $('paymentDate').value, note: $('paymentNote').value.trim() });
+      saveAccounts(accounts);
+      $('paymentForm').reset();
+      $('paymentDate').value = todayString();
+      renderAll();
+    });
+
+    $('expenseForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const accounts = loadAccounts();
+      const amount = Number($('expenseAmount').value || 0);
+      const account = accounts.find(x => x.id === $('expenseAccountId').value);
+      if (!account || amount <= 0) return;
+      account.balance = Number(account.balance || 0) + amount;
+      account.expenseHistory.unshift({ id: crypto.randomUUID(), amount, date: $('expenseDate').value, note: $('expenseNote').value.trim() });
+      saveAccounts(accounts);
+      $('expenseForm').reset();
+      $('expenseDate').value = todayString();
+      renderAll();
+    });
+
+    $('incomeForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      saveIncome({ weeklyIncome: Number($('weeklyIncome').value || 0), startDate: $('incomeStartDate').value, weekday: $('incomeWeekday').value });
+      renderAll();
+    });
+
+    $('extraIncomeForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const items = loadExtraIncome();
+      items.unshift({ id: crypto.randomUUID(), source: $('extraIncomeSource').value.trim(), amount: Number($('extraIncomeAmount').value || 0), date: $('extraIncomeDate').value, note: $('extraIncomeNote').value.trim() });
+      saveExtraIncome(items);
+      $('extraIncomeForm').reset();
+      $('extraIncomeDate').value = todayString();
+      renderAll();
+    });
+
+    $('resetAccountBtn').addEventListener('click', resetAccountForm);
+
+    $('clearBtn').addEventListener('click', () => {
+      if (!confirm('This will remove all saved data from this browser. Continue?')) return;
+      localStorage.removeItem(ACCOUNTS_KEY);
+      localStorage.removeItem(INCOME_KEY);
+      localStorage.removeItem(EXTRA_INCOME_KEY);
+      resetAccountForm();
+      renderAll();
+    });
+
+    $('exportBtn').addEventListener('click', () => {
+      const data = { income: loadIncome(), extraIncome: loadExtraIncome(), accounts: loadAccounts() };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'friendly-finance-tracker.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    $('loadSampleBtn').addEventListener('click', () => {
+      saveIncome({ weeklyIncome: 1568, startDate: '2026-04-03', weekday: '5' });
+      saveExtraIncome([]);
+      saveAccounts([
+        { id: crypto.randomUUID(), name: 'Chase Credit Card', type: 'Credit Card', balance: 6800, creditLimit: 9000, payment: 220, dueDate: '2026-04-12', interestRate: 24.99, notes: 'Main credit card. Autopay minimum enabled.', paymentHistory: [], expenseHistory: [] },
+        { id: crypto.randomUUID(), name: 'Toyota Car Payment', type: 'Car Payment', balance: 1430, creditLimit: 0, payment: 410, dueDate: '2026-04-18', interestRate: 6.25, notes: 'Monthly vehicle loan payment.', paymentHistory: [], expenseHistory: [] },
+        { id: crypto.randomUUID(), name: 'Affirm Purchase Plan', type: 'Affirm', balance: 540, creditLimit: 1200, payment: 90, dueDate: '2026-04-09', interestRate: 0, notes: 'Phone and accessories financing.', paymentHistory: [], expenseHistory: [] },
+      ]);
+      renderAll();
+    });
+
+    $('prevMonthBtn').addEventListener('click', () => {
+      if (calendarState.month === 0) calendarState = { year: calendarState.year - 1, month: 11 };
+      else calendarState = { year: calendarState.year, month: calendarState.month - 1 };
+      renderAll();
+    });
+
+    $('nextMonthBtn').addEventListener('click', () => {
+      if (calendarState.month === 11) calendarState = { year: calendarState.year + 1, month: 0 };
+      else calendarState = { year: calendarState.year, month: calendarState.month + 1 };
+      renderAll();
+    });
+
+    function renderAll() {
+      const accounts = loadAccounts();
+      const income = loadIncome();
+      const extraIncome = loadExtraIncome();
+      const summary = getSummary(accounts, income, extraIncome);
+      const payments = getAllPayments(accounts);
+      const expenses = getAllExpenses(accounts);
+      renderStats(summary, accounts);
+      renderDashboardAccounts(accounts);
+      renderSavedAccounts(accounts);
+      renderHistoryList('paymentHistory', payments, '-', 'No payments yet.');
+      renderHistoryList('expenseHistory', expenses, '+', 'No expenses yet.');
+      renderRecentActivity(payments, expenses);
+      renderIncomeHistory(income, extraIncome, summary);
+      renderDisclosure(accounts);
+      renderTotals(summary);
+      renderAccountOptions(accounts);
+      renderCharts(accounts, payments, expenses, extraIncome);
+      renderCalendar(accounts, income, extraIncome, payments, expenses);
+      populateForms(income);
+    }
+
+    renderAll();
+  </script>
+</body>
+</html>
