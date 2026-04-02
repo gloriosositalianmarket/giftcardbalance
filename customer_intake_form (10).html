@@ -3,551 +3,316 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gift Card Balance Lookup</title>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <title>Mother's Day Giveaway | Gloriosos Italian Market</title>
   <style>
     * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: Arial, Helvetica, sans-serif;
-      background: linear-gradient(135deg, #f7f7f7, #eceff1);
-      color: #222;
-      padding: 24px;
+      background: linear-gradient(135deg, #f7f3ed, #ffffff);
+      color: #1f1f1f;
     }
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-      display: grid;
-      gap: 20px;
-    }
-    .card {
-      background: #fff;
-      border-radius: 22px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
-      padding: 24px;
-    }
-    h1, h2, h3 { margin-top: 0; }
-    .subtitle {
-      color: #666;
-      margin-top: -6px;
-      margin-bottom: 18px;
-    }
-    .lookup-grid {
-      display: grid;
-      grid-template-columns: 2fr auto auto;
-      gap: 12px;
-      align-items: end;
-    }
-    .field {
+    .hero {
+      min-height: 100vh;
       display: flex;
-      flex-direction: column;
-      gap: 8px;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 16px;
+      background:
+        linear-gradient(rgba(255,255,255,0.84), rgba(255,255,255,0.9)),
+        linear-gradient(135deg, #d62828 0%, #ffffff 50%, #2a9d4b 100%);
     }
-    label {
-      font-size: 14px;
-      font-weight: 700;
-    }
-    input {
+    .wrap {
       width: 100%;
-      padding: 14px 16px;
-      border: 1px solid #d0d5dd;
-      border-radius: 12px;
-      font-size: 16px;
-    }
-    input:focus {
-      outline: none;
-      border-color: #111;
-      box-shadow: 0 0 0 4px rgba(17,17,17,0.08);
-    }
-    button {
-      padding: 14px 18px;
-      border: none;
-      border-radius: 12px;
-      font-size: 15px;
-      font-weight: 700;
-      cursor: pointer;
-    }
-    .primary { background: #111; color: #fff; }
-    .secondary { background: #e9ecef; color: #111; }
-    .danger { background: #c92a2a; color: #fff; }
-    .muted {
-      color: #666;
-      font-size: 14px;
-    }
-    .result-grid {
+      max-width: 1080px;
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 14px;
-      margin-top: 14px;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 24px;
+      align-items: stretch;
     }
-    .stat {
-      padding: 16px;
-      border: 1px solid #ececec;
-      border-radius: 16px;
-      background: #fafafa;
+    .promo, .form-card, .thank-you-card {
+      background: rgba(255,255,255,0.96);
+      border-radius: 28px;
+      box-shadow: 0 18px 50px rgba(0,0,0,0.12);
+      overflow: hidden;
     }
-    .stat-label {
+    .promo {
+      padding: 40px;
+      position: relative;
+      border: 1px solid rgba(0,0,0,0.06);
+    }
+    .brand {
+      display: inline-block;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: #1f1f1f;
+      color: #fff;
       font-size: 12px;
       font-weight: 700;
-      color: #666;
+      letter-spacing: 0.5px;
       text-transform: uppercase;
-      letter-spacing: 0.4px;
-      margin-bottom: 6px;
+      margin-bottom: 18px;
     }
-    .stat-value {
-      font-size: 22px;
-      font-weight: 800;
-      word-break: break-word;
+    .headline {
+      font-size: clamp(40px, 7vw, 76px);
+      line-height: 0.95;
+      margin: 0;
+      font-weight: 900;
     }
-    .status {
-      margin-top: 14px;
-      min-height: 20px;
-      font-size: 14px;
-      font-weight: 700;
+    .headline .red { color: #c62828; display: block; }
+    .headline .green { color: #2f8f46; display: block; }
+    .subhead {
+      font-size: 18px;
+      line-height: 1.6;
+      color: #525252;
+      margin: 22px 0 28px;
+      max-width: 560px;
     }
-    .toolbar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-top: 16px;
+    .prize-box {
+      display: inline-flex;
       align-items: center;
+      gap: 12px;
+      background: linear-gradient(135deg, #c62828, #e76f51);
+      color: white;
+      padding: 14px 20px;
+      border-radius: 18px;
+      font-weight: 800;
+      font-size: 18px;
+      box-shadow: 0 10px 24px rgba(198,40,40,0.24);
     }
-    .table-wrap {
-      overflow-x: auto;
-      margin-top: 10px;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      min-width: 900px;
-    }
-    th, td {
-      padding: 12px;
-      border-bottom: 1px solid #eee;
-      text-align: left;
-      font-size: 14px;
-    }
-    th {
-      background: #fafafa;
-    }
-    .edit-grid {
+    .features {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 12px;
-      margin-top: 16px;
+      gap: 14px;
+      margin-top: 26px;
     }
-    .hidden { display: none; }
-    .note {
-      font-size: 13px;
-      color: #666;
+    .feature {
+      padding: 16px;
+      border-radius: 18px;
+      background: #faf7f2;
+      border: 1px solid rgba(0,0,0,0.05);
+      font-size: 14px;
       line-height: 1.5;
-      margin-top: 12px;
+      color: #474747;
     }
-    .file-input {
-      padding: 10px;
-      border: 1px dashed #c8ced6;
-      border-radius: 12px;
-      background: #fafafa;
-      max-width: 340px;
+    .feature strong {
+      display: block;
+      color: #1f1f1f;
+      margin-bottom: 4px;
+    }
+    .form-card, .thank-you-card {
+      padding: 28px;
+      border: 1px solid rgba(0,0,0,0.06);
+    }
+    .form-title {
+      margin: 0 0 8px;
+      font-size: 28px;
+    }
+    .form-subtitle {
+      margin: 0 0 20px;
+      color: #666;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+    .field {
+      margin-bottom: 12px;
+    }
+    .input {
+      width: 100%;
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1px solid #d7d7d7;
+      font-size: 15px;
+      transition: 0.2s ease;
+    }
+    .input:focus {
+      outline: none;
+      border-color: #2f8f46;
+      box-shadow: 0 0 0 4px rgba(47,143,70,0.12);
+    }
+    .consent {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      font-size: 13px;
+      color: #5a5a5a;
+      line-height: 1.5;
+      margin: 12px 0 4px;
+    }
+    .consent input {
+      margin-top: 2px;
+      transform: scale(1.1);
+    }
+    .btn {
+      width: 100%;
+      padding: 15px 18px;
+      margin-top: 14px;
+      background: linear-gradient(135deg, #2f8f46, #1e6f34);
+      color: #fff;
+      border: none;
+      border-radius: 16px;
+      font-size: 16px;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 12px 24px rgba(47,143,70,0.22);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 14px 28px rgba(47,143,70,0.28);
+    }
+    .small-note {
+      margin-top: 14px;
+      font-size: 12px;
+      color: #777;
+      text-align: center;
+      line-height: 1.5;
+    }
+    .thank-you-card {
+      display: none;
+      text-align: center;
+      align-self: center;
+    }
+    .thank-you-icon {
+      font-size: 52px;
+      margin-bottom: 10px;
+    }
+    .thank-you-card h2 {
+      margin: 0 0 10px;
+      font-size: 34px;
+      color: #2f8f46;
+    }
+    .thank-you-card p {
+      margin: 0;
+      color: #5e5e5e;
+      line-height: 1.7;
+      font-size: 16px;
     }
     @media (max-width: 900px) {
-      .lookup-grid,
-      .edit-grid,
-      .result-grid {
+      .wrap {
         grid-template-columns: 1fr;
       }
-      body {
-        padding: 14px;
+      .promo, .form-card, .thank-you-card {
+        border-radius: 22px;
+      }
+      .promo {
+        padding: 28px;
+      }
+      .features {
+        grid-template-columns: 1fr;
       }
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="card">
-      <h1>Gift Card Balance Lookup</h1>
-      <div class="subtitle">Search by serial card, view balance, update the card record, or import your Excel file.</div>
-
-      <div class="lookup-grid">
-        <div class="field">
-          <label for="lookupSerial">Serial Card</label>
-          <input id="lookupSerial" type="text" placeholder="Type serial card number" />
+  <section class="hero">
+    <div class="wrap">
+      <div class="promo">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;">
+          <img src="logo.png" alt="Gloriosos Logo" style="height:60px;">
+          <div class="brand">Gloriosos Italian Market</div>
         </div>
-        <button id="searchBtn" class="primary">Check Balance</button>
-        <button id="resetLookupBtn" class="secondary">Reset</button>
+        <h1 class="headline">
+          <span class="red">WIN $100</span>
+          <span class="green">FOR MOTHER'S DAY</span>
+        </h1>
+        <p class="subhead">
+          Celebrate Mom with a special Mother's Day giveaway from Gloriosos Italian Market. Enter now for a chance to win a <strong>$100 gift card</strong> and make her day even more special.
+        </p>
+        <div class="prize-box">🎁 $100 Gift Card Giveaway</div>
+
+        <div class="features">
+          <div class="feature">
+            <strong>Quick Entry</strong>
+            Fill out the form in less than a minute.
+          </div>
+          <div class="feature">
+            <strong>Store Giveaway</strong>
+            A fun promotion for Gloriosos customers and families.
+          </div>
+          <div class="feature">
+            <strong>Perfect for Sharing</strong>
+            Great for your website, Instagram bio, or a QR code in store.
+          </div>
+          <div class="feature">
+            <strong>Mother's Day Promo</strong>
+            A seasonal giveaway with a clean branded look.
+          </div>
+        </div>
       </div>
 
-      <div id="status" class="status"></div>
+      <div>
+        <div class="form-card" id="formCard">
+          <h2 class="form-title">Enter to Win</h2>
+          <p class="form-subtitle">Enter your information below for a chance to win a $100 Mother's Day gift card from Gloriosos Italian Market.</p>
 
-      <div id="resultCard" class="hidden">
-        <div class="result-grid">
-          <div class="stat">
-            <div class="stat-label">GC From</div>
-            <div id="resultGcFrom" class="stat-value">-</div>
-          </div>
-          <div class="stat">
-            <div class="stat-label">Serial Card</div>
-            <div id="resultSerial" class="stat-value">-</div>
-          </div>
-          <div class="stat">
-            <div class="stat-label">Current Balance</div>
-            <div id="resultCurrentBalance" class="stat-value">-</div>
-          </div>
-          <div class="stat">
-            <div class="stat-label">Active Date</div>
-            <div id="resultActiveDate" class="stat-value">-</div>
-          </div>
-          <div class="stat">
-            <div class="stat-label">Last Activity Date</div>
-            <div id="resultLastActivityDate" class="stat-value">-</div>
-          </div>
-          <div class="stat">
-            <div class="stat-label">Original Amt</div>
-            <div id="resultOriginalAmt" class="stat-value">-</div>
-          </div>
+          <form id="giveawayForm" action="https://formspree.io/f/mzdkvqka" method="POST">
+            <div class="field">
+              <input class="input" type="text" name="First Name" placeholder="First Name" required>
+            </div>
+            <div class="field">
+              <input class="input" type="text" name="Last Name" placeholder="Last Name" required>
+            </div>
+            <div class="field">
+              <input class="input" type="email" name="Email" placeholder="Email Address" required>
+            </div>
+            <div class="field">
+              <input class="input" type="tel" name="Phone" placeholder="Phone Number" required>
+            </div>
+
+            <input type="hidden" name="Source" value="Website Giveaway">
+            <input type="hidden" name="Campaign" value="Mother's Day Giveaway">
+            <input type="hidden" name="_subject" value="New Mother's Day Giveaway Entry - Gloriosos Italian Market">
+
+            <label class="consent">
+              <input type="checkbox" name="Consent" required>
+              <span>I agree to receive promotions and updates from Gloriosos Italian Market.</span>
+            </label>
+
+            <button class="btn" type="submit">ENTER TO WIN $100</button>
+          </form>
+
+          <div class="small-note">Winner will be selected after the giveaway period ends. Good luck!</div>
         </div>
 
-        <h3 style="margin-top:20px;">Update This Card</h3>
-        <div class="edit-grid">
-          <div class="field">
-            <label for="editGcFrom">GC From</label>
-            <input id="editGcFrom" type="text" />
-          </div>
-          <div class="field">
-            <label for="editSerial">Serial Card</label>
-            <input id="editSerial" type="text" />
-          </div>
-          <div class="field">
-            <label for="editActiveDate">Active Date</label>
-            <input id="editActiveDate" type="date" />
-          </div>
-          <div class="field">
-            <label for="editLastActivityDate">Last Activity Date</label>
-            <input id="editLastActivityDate" type="date" />
-          </div>
-          <div class="field">
-            <label for="editOriginalAmt">Original Amt</label>
-            <input id="editOriginalAmt" type="number" step="0.01" />
-          </div>
-          <div class="field">
-            <label for="editCurrentBalance">Current Balance</label>
-            <input id="editCurrentBalance" type="number" step="0.01" />
-          </div>
-        </div>
-
-        <div class="edit-grid" style="margin-top:16px;">
-          <div class="field">
-            <label for="amountUsed">Amount Used</label>
-            <input id="amountUsed" type="number" step="0.01" min="0" placeholder="Enter amount used" />
-          </div>
-          <div class="field">
-            <label for="autoActivityDate">Activity Date</label>
-            <input id="autoActivityDate" type="date" />
-          </div>
-        </div>
-
-        <div class="toolbar">
-          <button id="deductBtn" class="primary">Apply Amount Used</button>
-          <button id="saveUpdateBtn" class="secondary">Save Manual Update</button>
+        <div class="thank-you-card" id="thankYouCard">
+          <div class="thank-you-icon">🎉</div>
+          <h2>Thank You!</h2>
+          <p>Your entry was submitted successfully. Good luck in our Mother's Day giveaway from Gloriosos Italian Market.</p>
         </div>
       </div>
     </div>
-
-    <div class="card">
-      <h2>Gift Card Database</h2>
-      <div class="muted">Use this table for all cards. Search above by serial card number.</div>
-
-      <div class="toolbar">
-        <button id="addNewBtn" class="primary">Add New Gift Card</button>
-        <button id="exportBtn" class="secondary">Export CSV</button>
-        <button id="clearBtn" class="danger">Clear All</button>
-      </div>
-
-      <div class="toolbar">
-        <div class="field" style="min-width:280px;">
-          <label for="excelFile">Upload Excel or CSV</label>
-          <input id="excelFile" class="file-input" type="file" accept=".xlsx,.xls,.csv" />
-        </div>
-        <button id="importBtn" class="primary" type="button">Import File</button>
-      </div>
-
-      <div class="note">
-        Required columns: <strong>GC From</strong>, <strong>Serial Card</strong>, <strong>Active Date</strong>, <strong>Last Activity Date</strong>, <strong>Original Amt</strong>, <strong>Current Balance</strong>.
-      </div>
-
-      <div id="newCardPanel" class="hidden" style="margin-top:18px;">
-        <h3>Add New Gift Card</h3>
-        <div class="edit-grid">
-          <div class="field">
-            <label for="newGcFrom">GC From</label>
-            <input id="newGcFrom" type="text" placeholder="Store / SPA / Online" />
-          </div>
-          <div class="field">
-            <label for="newSerial">Serial Card</label>
-            <input id="newSerial" type="text" placeholder="Enter serial" />
-          </div>
-          <div class="field">
-            <label for="newActiveDate">Active Date</label>
-            <input id="newActiveDate" type="date" />
-          </div>
-          <div class="field">
-            <label for="newLastActivityDate">Last Activity Date</label>
-            <input id="newLastActivityDate" type="date" />
-          </div>
-          <div class="field">
-            <label for="newOriginalAmt">Original Amt</label>
-            <input id="newOriginalAmt" type="number" step="0.01" />
-          </div>
-          <div class="field">
-            <label for="newCurrentBalance">Current Balance</label>
-            <input id="newCurrentBalance" type="number" step="0.01" />
-          </div>
-        </div>
-        <div class="toolbar">
-          <button id="saveNewBtn" class="primary">Save New Card</button>
-          <button id="cancelNewBtn" class="secondary">Cancel</button>
-        </div>
-      </div>
-
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>GC From</th>
-              <th>Serial Card</th>
-              <th>Active Date</th>
-              <th>Last Activity Date</th>
-              <th>Original Amt</th>
-              <th>Current Balance</th>
-            </tr>
-          </thead>
-          <tbody id="tableBody"></tbody>
-        </table>
-      </div>
-
-      <div class="note">
-        This version stores the database in the browser on the device you use. You can import from Excel and export back to CSV for Excel.
-      </div>
-    </div>
-  </div>
+  </section>
 
   <script>
-  const STORAGE_KEY = 'gift_card_balance_database';
-  let selectedIndex = -1;
+    const form = document.getElementById('giveawayForm');
+    const formCard = document.getElementById('formCard');
+    const thankYouCard = document.getElementById('thankYouCard');
 
-  function loadData() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
-    catch { return []; }
-  }
+    form.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const formData = new FormData(form);
 
-  function saveData(data) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  }
+      try {
+        const response = await fetch(form.action, {
+          method: 'POST',
+          body: formData,
+          headers: {
+            'Accept': 'application/json'
+          }
+        });
 
-  function normalizeSerial(v){ return String(v||'').trim().toLowerCase(); }
-
-  function formatMoney(v){ const n=Number(v||0); return `$${Number.isNaN(n)?0:n.toFixed(2)}`; }
-
-  function setStatus(m){ document.getElementById('status').textContent = m || ''; }
-
-  function getTodayLocalDate(){
-    const now=new Date(); const off=now.getTimezoneOffset();
-    const local=new Date(now.getTime()-off*60000);
-    return local.toISOString().slice(0,10);
-  }
-
-  function renderTable(){
-    const data=loadData(); const tbody=document.getElementById('tableBody');
-    tbody.innerHTML='';
-    data.forEach(it=>{
-      tbody.innerHTML += `
-        <tr>
-          <td>${it.gcFrom||''}</td>
-          <td>${it.serialCard||''}</td>
-          <td>${it.activeDate||''}</td>
-          <td>${it.lastActivityDate||''}</td>
-          <td>${formatMoney(it.originalAmt)}</td>
-          <td>${formatMoney(it.currentBalance)}</td>
-        </tr>`;
-    });
-  }
-
-  function fillResult(it, idx){
-    selectedIndex = idx;
-    document.getElementById('resultCard').classList.remove('hidden');
-    document.getElementById('resultGcFrom').textContent = it.gcFrom || '-';
-    document.getElementById('resultSerial').textContent = it.serialCard || '-';
-    document.getElementById('resultCurrentBalance').textContent = formatMoney(it.currentBalance);
-    document.getElementById('resultActiveDate').textContent = it.activeDate || '-';
-    document.getElementById('resultLastActivityDate').textContent = it.lastActivityDate || '-';
-    document.getElementById('resultOriginalAmt').textContent = formatMoney(it.originalAmt);
-
-    document.getElementById('editGcFrom').value = it.gcFrom || '';
-    document.getElementById('editSerial').value = it.serialCard || '';
-    document.getElementById('editActiveDate').value = it.activeDate || '';
-    document.getElementById('editLastActivityDate').value = it.lastActivityDate || '';
-    document.getElementById('editOriginalAmt').value = it.originalAmt || '';
-    document.getElementById('editCurrentBalance').value = it.currentBalance || '';
-
-    document.getElementById('amountUsed').value='';
-    document.getElementById('autoActivityDate').value = getTodayLocalDate();
-  }
-
-  function resetLookup(){
-    selectedIndex=-1;
-    document.getElementById('lookupSerial').value='';
-    document.getElementById('resultCard').classList.add('hidden');
-    setStatus('');
-  }
-
-  function searchBySerial(){
-    const v = normalizeSerial(document.getElementById('lookupSerial').value);
-    if(!v){ setStatus('Please type a serial card number.'); return; }
-    const data=loadData();
-    const idx=data.findIndex(x=>normalizeSerial(x.serialCard)===v);
-    if(idx===-1){ setStatus('No gift card found.'); return; }
-    fillResult(data[idx], idx);
-    setStatus('Gift card found.');
-  }
-
-  function applyAmountUsed(){
-    if(selectedIndex<0){ setStatus('Search first.'); return; }
-    const amt = Number(document.getElementById('amountUsed').value);
-    const cur = Number(document.getElementById('editCurrentBalance').value||0);
-    if(Number.isNaN(amt) || amt<0){ setStatus('Invalid amount.'); return; }
-    if(amt>cur){ setStatus('Amount too high.'); return; }
-
-    const newBal = (cur-amt).toFixed(2);
-    const date = document.getElementById('autoActivityDate').value || getTodayLocalDate();
-
-    const data=loadData();
-    data[selectedIndex].currentBalance = newBal;
-    data[selectedIndex].lastActivityDate = date;
-
-    saveData(data);
-    renderTable();
-    fillResult(data[selectedIndex], selectedIndex);
-    setStatus(`New balance: ${formatMoney(newBal)}`);
-  }
-
-  function saveUpdate(){
-    if(selectedIndex<0){ setStatus('Search first.'); return; }
-    const data=loadData();
-    const serial = document.getElementById('editSerial').value.trim();
-    if(!serial){ setStatus('Serial required.'); return; }
-    const dup = data.findIndex((x,i)=> i!==selectedIndex && normalizeSerial(x.serialCard)===normalizeSerial(serial));
-    if(dup!==-1){ setStatus('Serial already exists.'); return; }
-
-    data[selectedIndex] = {
-      gcFrom: document.getElementById('editGcFrom').value.trim(),
-      serialCard: serial,
-      activeDate: document.getElementById('editActiveDate').value,
-      lastActivityDate: document.getElementById('editLastActivityDate').value,
-      originalAmt: document.getElementById('editOriginalAmt').value,
-      currentBalance: document.getElementById('editCurrentBalance').value
-    };
-
-    saveData(data);
-    renderTable();
-    fillResult(data[selectedIndex], selectedIndex);
-    setStatus('Updated.');
-  }
-
-  function showNewPanel(){ document.getElementById('newCardPanel').classList.remove('hidden'); }
-  function hideNewPanel(){ document.getElementById('newCardPanel').classList.add('hidden'); }
-
-  function saveNewCard(){
-    const data=loadData();
-    const serial = document.getElementById('newSerial').value.trim();
-    if(!serial){ setStatus('Serial required.'); return; }
-    const exists = data.some(x=>normalizeSerial(x.serialCard)===normalizeSerial(serial));
-    if(exists){ setStatus('Serial already exists.'); return; }
-
-    data.unshift({
-      gcFrom: document.getElementById('newGcFrom').value.trim(),
-      serialCard: serial,
-      activeDate: document.getElementById('newActiveDate').value,
-      lastActivityDate: document.getElementById('newLastActivityDate').value,
-      originalAmt: document.getElementById('newOriginalAmt').value,
-      currentBalance: document.getElementById('newCurrentBalance').value
-    });
-
-    saveData(data);
-    renderTable();
-    hideNewPanel();
-    setStatus('New gift card added.');
-  }
-
-  function exportCsv(){
-    const data=loadData();
-    if(!data.length){ setStatus('No records to export.'); return; }
-    let csv='GC From,Serial Card,Active Date,Last Activity Date,Original Amt,Current Balance\n';
-    data.forEach(it=>{
-      csv += `"${(it.gcFrom||'').replace(/"/g,'""')}","${(it.serialCard||'').replace(/"/g,'""')}","${(it.activeDate||'').replace(/"/g,'""')}","${(it.lastActivityDate||'').replace(/"/g,'""')}","${(it.originalAmt||'').replace(/"/g,'""')}","${(it.currentBalance||'').replace(/"/g,'""')}"\n`;
-    });
-    const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a'); a.href=url; a.download='gift_card_database.csv'; a.click();
-    URL.revokeObjectURL(url);
-    setStatus('CSV exported.');
-  }
-
-  function clearAll(){ if(!confirm('Delete all gift card records?')) return; localStorage.removeItem(STORAGE_KEY); renderTable(); resetLookup(); setStatus('All records deleted.'); }
-
-  function mapRow(row){
-    const k = Object.keys(row).reduce((a,key)=>{ a[key.trim().toLowerCase()] = row[key]; return a; },{});
-    return {
-      gcFrom: k['gc from']||'',
-      serialCard: (k['serial card']||k['serial']||'').toString().trim(),
-      activeDate: k['active date']||'',
-      lastActivityDate: k['last activity date']||'',
-      originalAmt: k['original amt']||'',
-      currentBalance: k['current balance']||''
-    };
-  }
-
-  function importWorkbook(file){
-    const reader=new FileReader();
-    reader.onload=function(e){
-      try{
-        const data=new Uint8Array(e.target.result);
-        const wb=XLSX.read(data,{type:'array'});
-        const sh=wb.Sheets[wb.SheetNames[0]];
-        const rows=XLSX.utils.sheet_to_json(sh,{defval:''});
-        const mapped = rows.map(mapRow).filter(x=>x.serialCard);
-        const uniq=new Map(); mapped.forEach(x=>uniq.set(normalizeSerial(x.serialCard),x));
-        const finalData = Array.from(uniq.values());
-        saveData(finalData);
-        renderTable();
-        resetLookup();
-        setStatus(`Imported ${finalData.length} gift cards.`);
-      }catch{
-        setStatus('Could not import file. Check format.');
+        if (response.ok) {
+          formCard.style.display = 'none';
+          thankYouCard.style.display = 'block';
+          form.reset();
+        } else {
+          alert('There was a problem submitting your entry. Please try again.');
+        }
+      } catch (error) {
+        alert('There was a problem submitting your entry. Please try again.');
       }
-    };
-    reader.readAsArrayBuffer(file);
-  }
-
-  function importSelectedFile(){
-    const f=document.getElementById('excelFile').files[0];
-    if(!f){ setStatus('Choose a file first.'); return; }
-    importWorkbook(f);
-  }
-
-  document.getElementById('searchBtn').addEventListener('click', searchBySerial);
-  document.getElementById('lookupSerial').addEventListener('keydown', e=>{ if(e.key==='Enter') searchBySerial(); });
-  document.getElementById('resetLookupBtn').addEventListener('click', resetLookup);
-  document.getElementById('deductBtn').addEventListener('click', applyAmountUsed);
-  document.getElementById('saveUpdateBtn').addEventListener('click', saveUpdate);
-  document.getElementById('addNewBtn').addEventListener('click', showNewPanel);
-  document.getElementById('cancelNewBtn').addEventListener('click', hideNewPanel);
-  document.getElementById('saveNewBtn').addEventListener('click', saveNewCard);
-  document.getElementById('exportBtn').addEventListener('click', exportCsv);
-  document.getElementById('clearBtn').addEventListener('click', clearAll);
-  document.getElementById('importBtn').addEventListener('click', importSelectedFile);
-
-  document.getElementById('autoActivityDate').value = getTodayLocalDate();
-  renderTable();
-</script>
+    });
+  </script>
 </body>
 </html>
